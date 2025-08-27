@@ -9,6 +9,34 @@ import re
 class EnrichmentAgent:
     def __init__(self, model="mistral:latest"):
         self.model = model
+        # Expanded industry keywords for multiple sectors
+        self.industry_terms = [
+            # Food & Beverage
+            "cafe", "tea", "coffee", "snack", "food", "beverage", "retail",
+            "restaurant", "franchise", "hospitality", "bakery", "fast food",
+            "dining", "outlet", "chain",
+
+            # Technology
+            "software", "it services", "information technology", "technology",
+            "saas", "cloud", "artificial intelligence", "ai", "machine learning",
+            "data", "cybersecurity", "consulting", "automation", "blockchain", "iot",
+
+            # Finance
+            "banking", "fintech", "insurance", "lending", "investment", "trading",
+            "mutual fund", "capital market", "wealth management", "payment gateway",
+
+            # Healthcare
+            "hospital", "clinic", "pharma", "pharmaceutical", "biotech",
+            "diagnostics", "healthcare", "telemedicine", "medical devices", "wellness",
+
+            # Manufacturing & Energy
+            "manufacturing", "factory", "automobile", "electronics", "engineering",
+            "renewable", "solar", "oil", "gas", "energy", "power plant",
+
+            # Education
+            "edtech", "education", "university", "school", "training",
+            "elearning", "coaching"
+        ]
 
     # -----------------------------
     # Scrape About Page
@@ -24,17 +52,17 @@ class EnrichmentAgent:
                     soup = BeautifulSoup(r.text, "html.parser")
                     main_content = soup.find("main") or soup.find("section")
                     if main_content:
-                        description = main_content.get_text(" ", strip=True)[:500]
+                        description = main_content.get_text(" ", strip=True)[:800]
                     else:
                         meta = soup.find("meta", attrs={"name": "description"})
-                        description = meta["content"] if meta and meta.get("content") else soup.get_text(" ", strip=True)[:500]
+                        description = meta["content"] if meta and meta.get("content") else soup.get_text(" ", strip=True)[:800]
                     break
             except:
                 continue
-        return description
+        return description or "No description available"
 
     # -----------------------------
-    # Detect Hiring (crawl all links)
+    # Detect Hiring
     # -----------------------------
     def detect_hiring(self, website):
         try:
@@ -61,14 +89,20 @@ class EnrichmentAgent:
         return False
 
     # -----------------------------
-    # DuckDuckGo Signals with confidence
+    # DuckDuckGo Signals
     # -----------------------------
     def duckduckgo_signals(self, company_name):
         signals = {"funding_signal": 0.0, "expansion_signal": 0.0, "negative_signal": 0.0}
         queries = {
-            "funding_signal": f"{company_name} funding news",
-            "expansion_signal": f"{company_name} expansion opening new outlets",
-            "negative_signal": f"{company_name} layoffs shutdown bankruptcy"
+            "funding_signal": f"{company_name} funding investment venture capital news",
+            "expansion_signal": f"{company_name} expansion opening new outlets branches stores launch",
+            "negative_signal": f"{company_name} layoffs shutdown bankruptcy closure insolvency"
+        }
+
+        keywords = {
+            "funding_signal": ["raised", "funding", "series", "venture capital", "secured investment"],
+            "expansion_signal": ["opening", "expanding", "launched", "new outlet", "store launch", "new branch"],
+            "negative_signal": ["shutdown", "bankruptcy", "layoffs", "closure", "insolvency", "winding up"]
         }
 
         try:
@@ -78,52 +112,40 @@ class EnrichmentAgent:
                     score = 0
                     for r in results:
                         snippet = (r.get("body") or "").lower()
-                        if key == "funding_signal" and any(x in snippet for x in ["raised", "funding", "series"]):
-                            score += 0.4
-                        if key == "expansion_signal" and any(x in snippet for x in ["opening", "expanding", "launched"]):
-                            score += 0.4
-                        if key == "negative_signal":
-                            if any(x in snippet for x in ["permanent shutdown", "filed for bankruptcy", "mass layoffs", "insolvency"]):
-                                if company_name.lower() in snippet:
-                                    score += 0.5
-                    signals[key] = min(1.0, score) 
+                        for kw in keywords[key]:
+                            if kw in snippet:
+                                score += 0.3 if key != "negative_signal" else 0.5
+                    signals[key] = min(1.0, round(score, 2))
         except Exception as e:
             print("DuckDuckGo error:", e)
+
+        # Calibration
+        if signals["expansion_signal"] >= 0.5 or signals["funding_signal"] >= 0.5:
+            signals["negative_signal"] = min(signals["negative_signal"], 0.2)
+
         return signals
 
     # -----------------------------
-    # Parse About Page for Structured Info (Fallback)
-    # -----------------------------
-    def parse_about_structured(self, description):
-        info = {}
-        founded = re.search(r"founded in (\d{4})", description, re.I)
-        if founded:
-            info["founded_year"] = founded.group(1)
-        size = re.search(r"with (\d+) employees", description, re.I)
-        if size:
-            info["company_size"] = size.group(1)
-        return info
-
-    # -----------------------------
-    # Structured Info via Ollama Chat
+    # Structured Info (patched schema with safe fallback)
     # -----------------------------
     def extract_structured_info(self, snippets, company_name):
-        snippets_text = " ".join(snippets)[:800] 
+        snippets_text = " ".join(snippets)[:1200]
         messages = [
             {
                 "role": "system",
-                "content": """You are a strict company info extractor. 
-                Return ONLY valid JSON. 
-                No extra text, no comments, no markdown, no explanations. 
-                Schema:
+                "content": """You are a company info extractor.
+                Return ONLY valid JSON in this schema:
                 {
-                "name": string,
-                "founded_year": string or null,
-                "company_size": string or null,
-                "headquarters": string or null,
-                "industry": string or null,
-                "description": string
-                }"""
+                  "name": string,
+                  "founded_year": string,
+                  "employees_count": string,
+                  "headquarters": string,
+                  "industry": string,
+                  "description": string
+                }
+                Never return null. Use "Unknown" if info not found.
+                Description must summarize the company’s products/services/market.
+                """
             },
             {
                 "role": "user",
@@ -133,26 +155,25 @@ class EnrichmentAgent:
         try:
             response = chat(model=self.model, messages=messages)
             content = response['message']['content'].strip()
-
             if content.startswith("```"):
                 content = re.sub(r"^```(json)?|```$", "", content, flags=re.MULTILINE).strip()
 
-            return json.loads(content)
-
+            info = json.loads(content)
         except Exception as e:
             print("Ollama chat error:", e)
-            return {
-                "name": company_name,
-                "founded_year": None,
-                "company_size": None,
-                "headquarters": None,
-                "industry": None,
-                "description": None
-            }
+            info = {}
 
+        return {
+            "name": info.get("name") or company_name,
+            "founded_year": info.get("founded_year") or "Unknown",
+            "employees_count": info.get("employees_count") or "Unknown",
+            "headquarters": info.get("headquarters") or "Unknown",
+            "industry": info.get("industry") or "Unknown",
+            "description": info.get("description") or f"{company_name} is a company with growing market presence."
+        }
 
     # -----------------------------
-    # Main enrichment function
+    # Main enrichment
     # -----------------------------
     def enrich_lead(self, company_name, website):
         enrichment = {
@@ -163,9 +184,17 @@ class EnrichmentAgent:
             "industry_keywords": [],
         }
 
-        for kw in ["cafe", "tea", "food", "beverage", "retail", "restaurant"]:
-            if kw in enrichment["description"].lower():
-                enrichment["industry_keywords"].append(kw)
+        desc_lower = enrichment["description"].lower()
+        keywords_found = []
+        for kw in self.industry_terms:
+            if kw in desc_lower:
+                if kw in ["ai", "artificial intelligence", "machine learning", "blockchain", "iot"]:
+                    if any(t in desc_lower for t in ["software", "platform", "saas", "technology"]):
+                        keywords_found.append(kw)
+                else:
+                    keywords_found.append(kw)
+
+        enrichment["industry_keywords"] = list(set(keywords_found))
 
         enrichment.update(self.duckduckgo_signals(company_name))
 
@@ -177,16 +206,12 @@ class EnrichmentAgent:
                     query = f"{company_name} {q}"
                     results = list(ddgs.text(query, max_results=3))
                     for r in results:
-                        snippet = (r.get("body") or "")
-                        ddg_snippets.append(snippet)
+                        ddg_snippets.append(r.get("body") or "")
         except Exception as e:
             print("DuckDuckGo error:", e)
 
-        structured_info = self.parse_about_structured(enrichment["description"])
         ollama_info = self.extract_structured_info(ddg_snippets, company_name)
-        if isinstance(ollama_info, dict):
-            structured_info.update(ollama_info)
-        enrichment["structured_info"] = structured_info
+        enrichment["structured_info"] = ollama_info
 
         return enrichment
 
