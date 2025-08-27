@@ -41,7 +41,6 @@ class EnrichmentAgent:
             r = requests.get(website, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
 
-            # find links that may lead to hiring pages
             links = [a['href'] for a in soup.find_all("a", href=True)
                      if any(word in a.get_text().lower() for word in ["career", "job", "join", "hiring"])]
 
@@ -87,7 +86,7 @@ class EnrichmentAgent:
                             if any(x in snippet for x in ["permanent shutdown", "filed for bankruptcy", "mass layoffs", "insolvency"]):
                                 if company_name.lower() in snippet:
                                     score += 0.5
-                    signals[key] = min(1.0, score)  # cap at 1.0
+                    signals[key] = min(1.0, score) 
         except Exception as e:
             print("DuckDuckGo error:", e)
         return signals
@@ -109,7 +108,7 @@ class EnrichmentAgent:
     # Structured Info via Ollama Chat
     # -----------------------------
     def extract_structured_info(self, snippets, company_name):
-        snippets_text = " ".join(snippets)[:800]  # allow a bit more context
+        snippets_text = " ".join(snippets)[:800] 
         messages = [
             {
                 "role": "system",
@@ -135,11 +134,9 @@ class EnrichmentAgent:
             response = chat(model=self.model, messages=messages)
             content = response['message']['content'].strip()
 
-            # If model wrapped it in ```json ... ```
             if content.startswith("```"):
                 content = re.sub(r"^```(json)?|```$", "", content, flags=re.MULTILINE).strip()
 
-            # Try loading clean JSON
             return json.loads(content)
 
         except Exception as e:
@@ -166,15 +163,12 @@ class EnrichmentAgent:
             "industry_keywords": [],
         }
 
-        # Extract industry keywords
         for kw in ["cafe", "tea", "food", "beverage", "retail", "restaurant"]:
             if kw in enrichment["description"].lower():
                 enrichment["industry_keywords"].append(kw)
 
-        # DuckDuckGo signals
         enrichment.update(self.duckduckgo_signals(company_name))
 
-        # Collect snippets for Ollama structured info
         ddg_snippets = []
         queries = ["company size", "founded", "headquarters", "industry"]
         try:
@@ -188,7 +182,6 @@ class EnrichmentAgent:
         except Exception as e:
             print("DuckDuckGo error:", e)
 
-        # Structured info via About + Ollama
         structured_info = self.parse_about_structured(enrichment["description"])
         ollama_info = self.extract_structured_info(ddg_snippets, company_name)
         if isinstance(ollama_info, dict):
