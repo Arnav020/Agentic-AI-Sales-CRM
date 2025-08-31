@@ -9,34 +9,90 @@ import re
 class EnrichmentAgent:
     def __init__(self, model="mistral:latest"):
         self.model = model
-        # Expanded industry keywords for multiple sectors
-        self.industry_terms = [
+
+        # Expanded keyword → standardized industry mapping
+        self.industry_map = {
             # Food & Beverage
-            "cafe", "tea", "coffee", "snack", "food", "beverage", "retail",
-            "restaurant", "franchise", "hospitality", "bakery", "fast food",
-            "dining", "outlet", "chain",
+            "cafe": "Food & Beverage",
+            "tea": "Food & Beverage",
+            "coffee": "Food & Beverage",
+            "snack": "Food & Beverage",
+            "restaurant": "Food & Beverage",
+            "franchise": "Food & Beverage",
+            "bakery": "Food & Beverage",
+            "fast food": "Food & Beverage",
+            "dining": "Food & Beverage",
+            "outlet": "Food & Beverage",
+            "chain": "Food & Beverage",
 
             # Technology
-            "software", "it services", "information technology", "technology",
-            "saas", "cloud", "artificial intelligence", "ai", "machine learning",
-            "data", "cybersecurity", "consulting", "automation", "blockchain", "iot",
+            "software": "Technology",
+            "it services": "Technology",
+            "information technology": "Technology",
+            "technology": "Technology",
+            "saas": "Technology",
+            "cloud": "Technology",
+            "artificial intelligence": "Technology",
+            "machine learning": "Technology",
+            "data": "Technology",
+            "cybersecurity": "Technology",
+            "consulting": "Technology",
+            "automation": "Technology",
+            "blockchain": "Technology",
+            "iot": "Technology",
 
             # Finance
-            "banking", "fintech", "insurance", "lending", "investment", "trading",
-            "mutual fund", "capital market", "wealth management", "payment gateway",
+            "banking": "Finance",
+            "fintech": "Finance",
+            "insurance": "Finance",
+            "lending": "Finance",
+            "investment": "Finance",
+            "trading": "Finance",
+            "mutual fund": "Finance",
+            "capital market": "Finance",
+            "wealth management": "Finance",
+            "payment gateway": "Finance",
 
             # Healthcare
-            "hospital", "clinic", "pharma", "pharmaceutical", "biotech",
-            "diagnostics", "healthcare", "telemedicine", "medical devices", "wellness",
+            "hospital": "Healthcare",
+            "clinic": "Healthcare",
+            "pharma": "Healthcare",
+            "pharmaceutical": "Healthcare",
+            "biotech": "Healthcare",
+            "diagnostics": "Healthcare",
+            "healthcare": "Healthcare",
+            "telemedicine": "Healthcare",
+            "medical devices": "Healthcare",
+            "wellness": "Healthcare",
 
             # Manufacturing & Energy
-            "manufacturing", "factory", "automobile", "electronics", "engineering",
-            "renewable", "solar", "oil", "gas", "energy", "power plant",
+            "manufacturing": "Manufacturing",
+            "factory": "Manufacturing",
+            "automobile": "Manufacturing",
+            "electronics": "Manufacturing",
+            "engineering": "Manufacturing",
+            "renewable": "Energy",
+            "solar": "Energy",
+            "oil": "Energy",
+            "gas": "Energy",
+            "energy": "Energy",
+            "power plant": "Energy",
 
             # Education
-            "edtech", "education", "university", "school", "training",
-            "elearning", "coaching"
-        ]
+            "edtech": "Education",
+            "education": "Education",
+            "university": "Education",
+            "school": "Education",
+            "training": "Education",
+            "elearning": "Education",
+            "coaching": "Education"
+        }
+
+        # City regex for HQ detection (extendable)
+        self.city_regex = re.compile(
+            r"\b(New Delhi|Delhi|Gurugram|Bangalore|Bengaluru|Mumbai|Pune|Hyderabad|Chennai|Kolkata|Noida|Ahmedabad)\b",
+            re.I
+        )
 
     # -----------------------------
     # Scrape About Page
@@ -119,7 +175,7 @@ class EnrichmentAgent:
         except Exception as e:
             print("DuckDuckGo error:", e)
 
-        # Calibration
+        # Calibration: prevent false negatives if positive signals exist
         if signals["expansion_signal"] >= 0.5 or signals["funding_signal"] >= 0.5:
             signals["negative_signal"] = min(signals["negative_signal"], 0.2)
 
@@ -129,22 +185,39 @@ class EnrichmentAgent:
     # Structured Info (patched schema with safe fallback)
     # -----------------------------
     def extract_structured_info(self, snippets, company_name):
-        snippets_text = " ".join(snippets)[:1200]
+        snippets_text = " ".join(snippets)[:2000]
+
+        # Regex pre-extraction
+        founded_year = "Unknown"
+        year_match = re.search(r"(founded\s+in\s+|established\s+in\s+)(\d{4})", snippets_text, re.I)
+        if year_match:
+            founded_year = year_match.group(2)
+
+        employees = "Unknown"
+        emp_match = re.search(r"(\d{2,6})\+?\s+(employees|staff)", snippets_text, re.I)
+        if emp_match:
+            employees = emp_match.group(1)
+
+        headquarters = "Unknown"
+        city_match = self.city_regex.search(snippets_text)
+        if city_match:
+            headquarters = city_match.group(1)
+
+        # Try Ollama extraction
         messages = [
             {
                 "role": "system",
                 "content": """You are a company info extractor.
                 Return ONLY valid JSON in this schema:
                 {
-                  "name": string,
-                  "founded_year": string,
-                  "employees_count": string,
-                  "headquarters": string,
-                  "industry": string,
-                  "description": string
+                "name": string,
+                "founded_year": string,
+                "employees_count": string,
+                "headquarters": string,
+                "industry": string,
+                "description": string
                 }
-                Never return null. Use "Unknown" if info not found.
-                Description must summarize the company’s products/services/market.
+                Always fill all fields. Use 'Unknown' if not found.
                 """
             },
             {
@@ -152,22 +225,28 @@ class EnrichmentAgent:
                 "content": f"Extract structured info about {company_name} from this text:\n{snippets_text}"
             }
         ]
+
+        info = {}
         try:
-            response = chat(model=self.model, messages=messages)
+            response = chat(
+                model=self.model,
+                messages=messages,
+                options={"temperature": 0, "top_p": 1}
+            )
             content = response['message']['content'].strip()
             if content.startswith("```"):
                 content = re.sub(r"^```(json)?|```$", "", content, flags=re.MULTILINE).strip()
-
             info = json.loads(content)
         except Exception as e:
             print("Ollama chat error:", e)
             info = {}
 
+        # Safe fallback patch
         return {
             "name": info.get("name") or company_name,
-            "founded_year": info.get("founded_year") or "Unknown",
-            "employees_count": info.get("employees_count") or "Unknown",
-            "headquarters": info.get("headquarters") or "Unknown",
+            "founded_year": info.get("founded_year") or founded_year,
+            "employees_count": info.get("employees_count") or employees,
+            "headquarters": info.get("headquarters") or headquarters,
             "industry": info.get("industry") or "Unknown",
             "description": info.get("description") or f"{company_name} is a company with growing market presence."
         }
@@ -184,20 +263,20 @@ class EnrichmentAgent:
             "industry_keywords": [],
         }
 
+        # Industry inference
         desc_lower = enrichment["description"].lower()
         keywords_found = []
-        for kw in self.industry_terms:
+        industry_guess = None
+        for kw, mapped_industry in self.industry_map.items():
             if kw in desc_lower:
-                if kw in ["ai", "artificial intelligence", "machine learning", "blockchain", "iot"]:
-                    if any(t in desc_lower for t in ["software", "platform", "saas", "technology"]):
-                        keywords_found.append(kw)
-                else:
-                    keywords_found.append(kw)
-
+                keywords_found.append(kw)
+                industry_guess = mapped_industry if not industry_guess else industry_guess
         enrichment["industry_keywords"] = list(set(keywords_found))
 
+        # Add signals
         enrichment.update(self.duckduckgo_signals(company_name))
 
+        # Collect DDG snippets
         ddg_snippets = []
         queries = ["company size", "founded", "headquarters", "industry"]
         try:
@@ -210,7 +289,13 @@ class EnrichmentAgent:
         except Exception as e:
             print("DuckDuckGo error:", e)
 
+        # Structured info extraction
         ollama_info = self.extract_structured_info(ddg_snippets, company_name)
+
+        # Patch industry if Ollama fails
+        if ollama_info["industry"] == "Unknown" and industry_guess:
+            ollama_info["industry"] = industry_guess
+
         enrichment["structured_info"] = ollama_info
 
         return enrichment
