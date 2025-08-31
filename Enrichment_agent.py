@@ -4,6 +4,7 @@ from ddgs import DDGS
 from ollama import chat
 import json
 import re
+import time
 
 
 class EnrichmentAgent:
@@ -113,7 +114,8 @@ class EnrichmentAgent:
                         meta = soup.find("meta", attrs={"name": "description"})
                         description = meta["content"] if meta and meta.get("content") else soup.get_text(" ", strip=True)[:800]
                     break
-            except:
+            except Exception as e:
+                print(f"About page scrape failed for {website}: {e}")
                 continue
         return description or "No description available"
 
@@ -149,45 +151,47 @@ class EnrichmentAgent:
     # -----------------------------
     def duckduckgo_signals(self, company_name):
         signals = {"funding_signal": 0.0, "expansion_signal": 0.0, "negative_signal": 0.0}
-        queries = {
-            "funding_signal": f"{company_name} funding investment venture capital news",
-            "expansion_signal": f"{company_name} expansion opening new outlets branches stores launch",
-            "negative_signal": f"{company_name} layoffs shutdown bankruptcy closure insolvency"
-        }
-
-        keywords = {
-            "funding_signal": ["raised", "funding", "series", "venture capital", "secured investment"],
-            "expansion_signal": ["opening", "expanding", "launched", "new outlet", "store launch", "new branch"],
-            "negative_signal": ["shutdown", "bankruptcy", "layoffs", "closure", "insolvency", "winding up"]
-        }
-
         try:
             with DDGS() as ddgs:
+                queries = {
+                    "funding_signal": f"{company_name} funding investment venture capital news",
+                    "expansion_signal": f"{company_name} expansion opening new outlets branches stores launch",
+                    "negative_signal": f"{company_name} layoffs shutdown bankruptcy closure insolvency"
+                }
+                keywords = {
+                    "funding_signal": ["raised", "funding", "series", "venture capital", "secured investment"],
+                    "expansion_signal": ["opening", "expanding", "launched", "new outlet", "store launch", "new branch"],
+                    "negative_signal": ["shutdown", "bankruptcy", "layoffs", "closure", "insolvency", "winding up"]
+                }
                 for key, query in queries.items():
-                    results = list(ddgs.text(query, max_results=5))
-                    score = 0
-                    for r in results:
-                        snippet = (r.get("body") or "").lower()
-                        for kw in keywords[key]:
-                            if kw in snippet:
-                                score += 0.3 if key != "negative_signal" else 0.5
-                    signals[key] = min(1.0, round(score, 2))
+                    try:
+                        results = list(ddgs.text(query, max_results=5))
+                        score = 0
+                        for r in results:
+                            snippet = (r.get("body") or "").lower()
+                            for kw in keywords[key]:
+                                if kw in snippet:
+                                    score += 0.3 if key != "negative_signal" else 0.5
+                        signals[key] = min(1.0, round(score, 2))
+                    except Exception as e:
+                        print(f"DDG query failed for {company_name} ({key}): {e}")
         except Exception as e:
-            print("DuckDuckGo error:", e)
+            print("DuckDuckGo initialization failed:", e)
 
-        # Calibration: prevent false negatives if positive signals exist
+        # Calibration
         if signals["expansion_signal"] >= 0.5 or signals["funding_signal"] >= 0.5:
             signals["negative_signal"] = min(signals["negative_signal"], 0.2)
 
         return signals
 
     # -----------------------------
-    # Structured Info (patched schema with safe fallback)
+    # Structured Info Extraction
     # -----------------------------
     def extract_structured_info(self, snippets, company_name):
         snippets_text = " ".join(snippets)[:2000]
+        snippets_text = re.sub(r'[\r\n]+', ' ', snippets_text)
+        snippets_text = re.sub(r'["]', "'", snippets_text)
 
-        # Regex pre-extraction
         founded_year = "Unknown"
         year_match = re.search(r"(founded\s+in\s+|established\s+in\s+)(\d{4})", snippets_text, re.I)
         if year_match:
@@ -203,45 +207,21 @@ class EnrichmentAgent:
         if city_match:
             headquarters = city_match.group(1)
 
-        # Try Ollama extraction
         messages = [
-            {
-                "role": "system",
-                "content": """You are a company info extractor.
-                Return ONLY valid JSON in this schema:
-                {
-                "name": string,
-                "founded_year": string,
-                "employees_count": string,
-                "headquarters": string,
-                "industry": string,
-                "description": string
-                }
-                Always fill all fields. Use 'Unknown' if not found.
-                """
-            },
-            {
-                "role": "user",
-                "content": f"Extract structured info about {company_name} from this text:\n{snippets_text}"
-            }
+            {"role": "system", "content": "You are a company info extractor. Return ONLY valid JSON in a single line. Use 'Unknown' if field not found."},
+            {"role": "user", "content": f"Extract structured info about {company_name} from this text:\n{snippets_text}"}
         ]
 
         info = {}
         try:
-            response = chat(
-                model=self.model,
-                messages=messages,
-                options={"temperature": 0, "top_p": 1}
-            )
+            response = chat(model=self.model, messages=messages, options={"temperature": 0, "top_p": 1})
             content = response['message']['content'].strip()
-            if content.startswith("```"):
-                content = re.sub(r"^```(json)?|```$", "", content, flags=re.MULTILINE).strip()
+            content = re.sub(r"^```(json)?|```$", "", content, flags=re.MULTILINE).strip()
             info = json.loads(content)
         except Exception as e:
-            print("Ollama chat error:", e)
+            print(f"Ollama chat error for {company_name}: {e}")
             info = {}
 
-        # Safe fallback patch
         return {
             "name": info.get("name") or company_name,
             "founded_year": info.get("founded_year") or founded_year,
@@ -274,7 +254,10 @@ class EnrichmentAgent:
         enrichment["industry_keywords"] = list(set(keywords_found))
 
         # Add signals
-        enrichment.update(self.duckduckgo_signals(company_name))
+        try:
+            enrichment.update(self.duckduckgo_signals(company_name))
+        except Exception as e:
+            print(f"Skipping DDG signals for {company_name} due to error: {e}")
 
         # Collect DDG snippets
         ddg_snippets = []
@@ -282,32 +265,56 @@ class EnrichmentAgent:
         try:
             with DDGS() as ddgs:
                 for q in queries:
-                    query = f"{company_name} {q}"
-                    results = list(ddgs.text(query, max_results=3))
-                    for r in results:
-                        ddg_snippets.append(r.get("body") or "")
+                    try:
+                        results = list(ddgs.text(f"{company_name} {q}", max_results=3))
+                        for r in results:
+                            ddg_snippets.append(r.get("body") or "")
+                    except Exception as e:
+                        print(f"DDG snippet fetch failed for {company_name} ({q}): {e}")
         except Exception as e:
-            print("DuckDuckGo error:", e)
+            print(f"DDG initialization failed for {company_name}: {e}")
 
         # Structured info extraction
         ollama_info = self.extract_structured_info(ddg_snippets, company_name)
-
-        # Patch industry if Ollama fails
         if ollama_info["industry"] == "Unknown" and industry_guess:
             ollama_info["industry"] = industry_guess
 
         enrichment["structured_info"] = ollama_info
-
         return enrichment
 
 
 # -----------------------------
-# Run Example
+# Run Multiple Companies Safely
 # -----------------------------
 if __name__ == "__main__":
     agent = EnrichmentAgent(model="mistral:latest")
-    company = "Chaayos"
-    website = "https://chaayos.com"
-    enriched_data = agent.enrich_lead(company, website)
 
-    print(json.dumps(enriched_data, indent=2))
+    companies = [
+        {"name": "Chaayos", "website": "https://chaayos.com"},
+        {"name": "Zomato", "website": "https://www.zomato.com"},
+        {"name": "Flipkart", "website": "https://www.flipkart.com"},
+        {"name": "Swiggy", "website": "https://www.swiggy.com"},
+        {"name": "Byju's", "website": "https://byjus.com"},
+        {"name": "Ola", "website": "https://www.olacabs.com"},
+        {"name": "Paytm", "website": "https://paytm.com"},
+        {"name": "Razorpay", "website": "https://razorpay.com"},
+        {"name": "BigBasket", "website": "https://www.bigbasket.com"},
+        {"name": "UrbanClap", "website": "https://www.urbanclap.com"}
+    ]
+
+    all_enriched = []
+
+    for comp in companies:
+        print(f"\nEnriching: {comp['name']} ...")
+        try:
+            enriched_data = agent.enrich_lead(comp["name"], comp["website"])
+        except Exception as e:
+            print(f"Failed to enrich {comp['name']}: {e}")
+            enriched_data = {"company": comp['name'], "error": str(e)}
+        all_enriched.append(enriched_data)
+        time.sleep(1)  # small delay to reduce network issues
+
+    with open("enriched_companies.json", "w", encoding="utf-8") as f:
+        json.dump(all_enriched, f, indent=2, ensure_ascii=False)
+
+    print("\nEnrichment complete! Saved to enriched_companies.json")
