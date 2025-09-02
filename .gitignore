@@ -48,3 +48,11 @@ coverage/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# API Keys and Sensitive Data (SECURITY)
+*.key
+*.pem
+api_keys.txt
+secrets.txt
+config.json
+sales_contacts_*.json

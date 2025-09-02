@@ -246,8 +246,15 @@ class SalesContactFinderAgent:
 
 def main():
     """Main function to run the sales contact finder"""
-    # ContactOut API key
-    API_KEY = "vBLwB5ZZVUM16VTeJvYxBhCC"
+    import os
+    
+    # Get ContactOut API key from environment variable
+    API_KEY = os.getenv('CONTACTOUT_API_KEY', 'YOUR_API_KEY_HERE')
+    
+    if API_KEY == 'YOUR_API_KEY_HERE':
+        print("⚠️  Please set your ContactOut API key in environment variable CONTACTOUT_API_KEY")
+        print("   Example: export CONTACTOUT_API_KEY='your_api_key_here'")
+        return
     
     # Initialize the agent
     agent = SalesContactFinderAgent(API_KEY)

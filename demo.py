@@ -6,11 +6,18 @@ Quick demo of the Sales Contact Finder Agent
 from sales_contact_finder import SalesContactFinderAgent
 
 def main():
+    import os
+    
     print("🤖 Sales Contact Finder Agent - Quick Demo")
     print("=" * 50)
     
-    # Your ContactOut API key
-    API_KEY = "vBLwB5ZZVUM16VTeJvYxBhCC"
+    # Get ContactOut API key from environment variable
+    API_KEY = os.getenv('CONTACTOUT_API_KEY', 'YOUR_API_KEY_HERE')
+    
+    if API_KEY == 'YOUR_API_KEY_HERE':
+        print("⚠️  Please set your ContactOut API key in environment variable CONTACTOUT_API_KEY")
+        print("   Example: export CONTACTOUT_API_KEY='your_api_key_here'")
+        return
     
     # Initialize the agent
     agent = SalesContactFinderAgent(API_KEY)
