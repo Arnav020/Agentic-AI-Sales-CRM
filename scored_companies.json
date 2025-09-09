@@ -1,0 +1,100 @@
+[
+  {
+    "company": "Chaayos",
+    "score": 83,
+    "reasons": [
+      "Industry match",
+      "Keywords matched: tea, snack",
+      "HQ match",
+      "Strong funding signal",
+      "Actively hiring",
+      "Founded recently"
+    ]
+  },
+  {
+    "company": "UrbanClap",
+    "score": 63,
+    "reasons": [
+      "Industry match",
+      "HQ match",
+      "Strong funding signal",
+      "Actively hiring",
+      "Founded recently"
+    ]
+  },
+  {
+    "company": "Swiggy",
+    "score": 33,
+    "reasons": [
+      "Strong funding signal",
+      "Expansion activity detected",
+      "Actively hiring",
+      "Founded recently"
+    ]
+  },
+  {
+    "company": "Paytm",
+    "score": 33,
+    "reasons": [
+      "Strong funding signal",
+      "Expansion activity detected",
+      "Actively hiring",
+      "Founded recently"
+    ]
+  },
+  {
+    "company": "Byju's",
+    "score": 30,
+    "reasons": [
+      "HQ match",
+      "Strong funding signal",
+      "Not hiring",
+      "Founded recently",
+      "Employee size within target"
+    ]
+  },
+  {
+    "company": "Razorpay",
+    "score": 28,
+    "reasons": [
+      "Strong funding signal",
+      "Actively hiring",
+      "Founded recently"
+    ]
+  },
+  {
+    "company": "Ola",
+    "score": 20,
+    "reasons": [
+      "Strong funding signal",
+      "Actively hiring"
+    ]
+  },
+  {
+    "company": "Zomato",
+    "score": 15,
+    "reasons": [
+      "HQ match",
+      "Strong funding signal",
+      "Not hiring"
+    ]
+  },
+  {
+    "company": "Flipkart",
+    "score": 15,
+    "reasons": [
+      "HQ match",
+      "Strong funding signal",
+      "Not hiring"
+    ]
+  },
+  {
+    "company": "BigBasket",
+    "score": 13,
+    "reasons": [
+      "Strong funding signal",
+      "Not hiring",
+      "Founded recently"
+    ]
+  }
+]

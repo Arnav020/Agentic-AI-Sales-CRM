@@ -1,0 +1,10 @@
+{
+  "industry": ["Food & Beverage", "Technology"],
+  "preferred_keywords": ["tea", "snack", "cafe"],
+  "headquarters": ["New Delhi", "Gurugram", "Bengaluru"],
+  "min_funding_signal": 0.3,
+  "max_negative_signal": 0.4,
+  "hiring_required": true,
+  "founded_after": 2010,
+  "employee_range": [50, 500]
+}
