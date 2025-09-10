@@ -1,4 +1,6 @@
+# agents/scoring_agent.py
 import json
+import os
 
 class ScoringAgent:
     def __init__(self, requirements_file, companies_file):
@@ -77,8 +79,17 @@ class ScoringAgent:
 
 
 if __name__ == "__main__":
-    agent = ScoringAgent("customer_requirements.json", "enriched_companies.json")
+    inputs_dir = "inputs"
+    outputs_dir = "outputs"
+
+    requirements_file = os.path.join(inputs_dir, "customer_requirements.json")
+    companies_file = os.path.join(outputs_dir, "enriched_companies.json")
+    output_file = os.path.join(outputs_dir, "scored_companies.json")
+
+    agent = ScoringAgent(requirements_file, companies_file)
     top_companies = agent.rank_companies()
-    with open("scored_companies.json", "w", encoding="utf-8") as f:
+
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(top_companies, f, indent=2, ensure_ascii=False)
-    print("✅ Scoring complete! Top companies saved to scored_companies.json")
+
+    print(f"✅ Scoring complete! Top companies saved to {output_file}")

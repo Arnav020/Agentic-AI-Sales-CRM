@@ -1,3 +1,5 @@
+# agents/enrichment_agent.py
+# Do "ollama pull mistral:latest" and then "ollama serve"
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
@@ -5,6 +7,7 @@ from ollama import chat
 import json
 import re
 import time
+import os
 
 
 class EnrichmentAgent:
@@ -289,18 +292,10 @@ class EnrichmentAgent:
 if __name__ == "__main__":
     agent = EnrichmentAgent(model="mistral:latest")
 
-    companies = [
-        {"name": "Chaayos", "website": "https://chaayos.com"},
-        {"name": "Zomato", "website": "https://www.zomato.com"},
-        {"name": "Flipkart", "website": "https://www.flipkart.com"},
-        {"name": "Swiggy", "website": "https://www.swiggy.com"},
-        {"name": "Byju's", "website": "https://byjus.com"},
-        {"name": "Ola", "website": "https://www.olacabs.com"},
-        {"name": "Paytm", "website": "https://paytm.com"},
-        {"name": "Razorpay", "website": "https://razorpay.com"},
-        {"name": "BigBasket", "website": "https://www.bigbasket.com"},
-        {"name": "UrbanClap", "website": "https://www.urbanclap.com"}
-    ]
+    # Load companies.json
+    input_file = os.path.join("inputs", "companies.json")
+    with open(input_file, "r", encoding="utf-8") as f:
+        companies = json.load(f)
 
     all_enriched = []
 
@@ -314,7 +309,10 @@ if __name__ == "__main__":
         all_enriched.append(enriched_data)
         time.sleep(1)  # small delay to reduce network issues
 
-    with open("enriched_companies.json", "w", encoding="utf-8") as f:
+    # Save to outputs/enriched_companies.json
+    os.makedirs("outputs", exist_ok=True)
+    output_file = os.path.join("outputs", "enriched_companies.json")
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(all_enriched, f, indent=2, ensure_ascii=False)
 
-    print("\nEnrichment complete! Saved to enriched_companies.json")
+    print(f"\nEnrichment complete! Saved to {output_file}")
