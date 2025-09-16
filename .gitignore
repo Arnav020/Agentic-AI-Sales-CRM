@@ -1,6 +1,7 @@
 # OS / system files
 .DS_Store
 Thumbs.db
+cache
 
 # Python
 __pycache__/

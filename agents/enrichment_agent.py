@@ -1,151 +1,72 @@
 # agents/enrichment_agent.py
-# Do "ollama pull mistral:latest" and then "ollama serve"
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
 from ollama import chat
 import json
 import re
-import time
 import os
-
+import time
+import ast
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class EnrichmentAgent:
     def __init__(self, model="mistral:latest"):
         self.model = model
-
-        # Expanded keyword → standardized industry mapping
-        self.industry_map = {
-            # Food & Beverage
-            "cafe": "Food & Beverage",
-            "tea": "Food & Beverage",
-            "coffee": "Food & Beverage",
-            "snack": "Food & Beverage",
-            "restaurant": "Food & Beverage",
-            "franchise": "Food & Beverage",
-            "bakery": "Food & Beverage",
-            "fast food": "Food & Beverage",
-            "dining": "Food & Beverage",
-            "outlet": "Food & Beverage",
-            "chain": "Food & Beverage",
-
-            # Technology
-            "software": "Technology",
-            "it services": "Technology",
-            "information technology": "Technology",
-            "technology": "Technology",
-            "saas": "Technology",
-            "cloud": "Technology",
-            "artificial intelligence": "Technology",
-            "machine learning": "Technology",
-            "data": "Technology",
-            "cybersecurity": "Technology",
-            "consulting": "Technology",
-            "automation": "Technology",
-            "blockchain": "Technology",
-            "iot": "Technology",
-
-            # Finance
-            "banking": "Finance",
-            "fintech": "Finance",
-            "insurance": "Finance",
-            "lending": "Finance",
-            "investment": "Finance",
-            "trading": "Finance",
-            "mutual fund": "Finance",
-            "capital market": "Finance",
-            "wealth management": "Finance",
-            "payment gateway": "Finance",
-
-            # Healthcare
-            "hospital": "Healthcare",
-            "clinic": "Healthcare",
-            "pharma": "Healthcare",
-            "pharmaceutical": "Healthcare",
-            "biotech": "Healthcare",
-            "diagnostics": "Healthcare",
-            "healthcare": "Healthcare",
-            "telemedicine": "Healthcare",
-            "medical devices": "Healthcare",
-            "wellness": "Healthcare",
-
-            # Manufacturing & Energy
-            "manufacturing": "Manufacturing",
-            "factory": "Manufacturing",
-            "automobile": "Manufacturing",
-            "electronics": "Manufacturing",
-            "engineering": "Manufacturing",
-            "renewable": "Energy",
-            "solar": "Energy",
-            "oil": "Energy",
-            "gas": "Energy",
-            "energy": "Energy",
-            "power plant": "Energy",
-
-            # Education
-            "edtech": "Education",
-            "education": "Education",
-            "university": "Education",
-            "school": "Education",
-            "training": "Education",
-            "elearning": "Education",
-            "coaching": "Education"
-        }
-
-        # City regex for HQ detection (extendable)
         self.city_regex = re.compile(
             r"\b(New Delhi|Delhi|Gurugram|Bangalore|Bengaluru|Mumbai|Pune|Hyderabad|Chennai|Kolkata|Noida|Ahmedabad)\b",
             re.I
         )
 
     # -----------------------------
-    # Scrape About Page
+    # Scrape About / Meta / JSON-LD
     # -----------------------------
     def scrape_about(self, website):
-        about_paths = ["/pages/about-brand", "/about", "/about-us", "/"]
-        description = ""
-        for path in about_paths:
-            try:
-                url = website.rstrip("/") + path
-                r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                if r.status_code == 200:
-                    soup = BeautifulSoup(r.text, "html.parser")
-                    main_content = soup.find("main") or soup.find("section")
-                    if main_content:
-                        description = main_content.get_text(" ", strip=True)[:800]
-                    else:
-                        meta = soup.find("meta", attrs={"name": "description"})
-                        description = meta["content"] if meta and meta.get("content") else soup.get_text(" ", strip=True)[:800]
-                    break
-            except Exception as e:
-                print(f"About page scrape failed for {website}: {e}")
-                continue
-        return description or "No description available"
-
-    # -----------------------------
-    # Detect Hiring
-    # -----------------------------
-    def detect_hiring(self, website):
         try:
             r = requests.get(website, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
 
-            links = [a['href'] for a in soup.find_all("a", href=True)
-                     if any(word in a.get_text().lower() for word in ["career", "job", "join", "hiring"])]
-
-            for link in links:
-                if not link.startswith("http"):
-                    link = website.rstrip("/") + "/" + link.lstrip("/")
+            # JSON-LD (company schema)
+            ld_json = soup.find("script", type="application/ld+json")
+            if ld_json and ld_json.string:
                 try:
-                    r2 = requests.get(link, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                    text = r2.text.lower()
-                    if "forms.gle" in text or "docs.google.com/forms" in text:
-                        return True
-                    if any(word in text for word in ["apply", "position", "opening", "job", "vacancy"]):
-                        return True
+                    data = json.loads(ld_json.string)
+                    if isinstance(data, dict) and data.get("description"):
+                        return data.get("description")[:800]
                 except:
-                    continue
-        except:
+                    # ignore parse errors for JSON-LD
+                    pass
+
+            # Meta description (og:description or name=description)
+            meta = (soup.find("meta", attrs={"property": "og:description"}) or
+                    soup.find("meta", attrs={"name": "description"}))
+            if meta and meta.get("content"):
+                return meta["content"][:800]
+
+            # Visible content
+            main_content = soup.find("main") or soup.find("section")
+            if main_content:
+                return main_content.get_text(" ", strip=True)[:800]
+
+            # Fallback to whole page text
+            return soup.get_text(" ", strip=True)[:800]
+        except Exception as e:
+            print(f"[scrape_about] Scrape failed for {website}: {e}")
+            return "No description available"
+
+    # -----------------------------
+    # Hiring Detection
+    # -----------------------------
+    def detect_hiring(self, website):
+        try:
+            r = requests.get(website, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            txt = r.text.lower()
+            if any(word in txt for word in ["career", "careers", "job", "jobs", "hiring", "join us", "we're hiring"]):
+                return True
+            # some career pages are on third-party ATS; check page for common ATS domains
+            if any(domain in txt for domain in ["greenhouse.io", "lever.co", "workday.com", "smartrecruiters.com"]):
+                return True
+        except Exception:
             pass
         return False
 
@@ -154,165 +75,260 @@ class EnrichmentAgent:
     # -----------------------------
     def duckduckgo_signals(self, company_name):
         signals = {"funding_signal": 0.0, "expansion_signal": 0.0, "negative_signal": 0.0}
+        queries = {
+            "funding_signal": f"{company_name} funding investment venture capital news",
+            "expansion_signal": f"{company_name} expansion launch new office store opening",
+            "negative_signal": f"{company_name} layoffs shutdown bankruptcy closure scandal"
+        }
+        keywords = {
+            "funding_signal": ["raised", "funding", "series", "venture capital", "investment"],
+            "expansion_signal": ["opening", "expanding", "launched", "new office", "store launch", "expansion"],
+            "negative_signal": ["shutdown", "bankruptcy", "layoffs", "closure", "fraud", "scandal"]
+        }
+
         try:
             with DDGS() as ddgs:
-                queries = {
-                    "funding_signal": f"{company_name} funding investment venture capital news",
-                    "expansion_signal": f"{company_name} expansion opening new outlets branches stores launch",
-                    "negative_signal": f"{company_name} layoffs shutdown bankruptcy closure insolvency"
-                }
-                keywords = {
-                    "funding_signal": ["raised", "funding", "series", "venture capital", "secured investment"],
-                    "expansion_signal": ["opening", "expanding", "launched", "new outlet", "store launch", "new branch"],
-                    "negative_signal": ["shutdown", "bankruptcy", "layoffs", "closure", "insolvency", "winding up"]
-                }
                 for key, query in queries.items():
                     try:
-                        results = list(ddgs.text(query, max_results=5))
-                        score = 0
+                        results = list(ddgs.text(query, max_results=6))
+                        # compute a capped score (prevent repeats inflating it)
+                        score = 0.0
+                        seen_snips = set()
                         for r in results:
-                            snippet = (r.get("body") or "").lower()
+                            body = (r.get("body") or "").lower()
+                            if not body or body in seen_snips:
+                                continue
+                            seen_snips.add(body)
                             for kw in keywords[key]:
-                                if kw in snippet:
-                                    score += 0.3 if key != "negative_signal" else 0.5
+                                if kw in body:
+                                    score += 0.33 if key != "negative_signal" else 0.5
                         signals[key] = min(1.0, round(score, 2))
                     except Exception as e:
-                        print(f"DDG query failed for {company_name} ({key}): {e}")
+                        # don't stop if a single query fails
+                        print(f"[duckduckgo_signals] query error for {company_name} ({key}): {e}")
         except Exception as e:
-            print("DuckDuckGo initialization failed:", e)
+            print(f"[duckduckgo_signals] DDGS init failed for {company_name}: {e}")
 
-        # Calibration
+        # Simple calibration: strong funding or expansion reduces weight of negative signal
         if signals["expansion_signal"] >= 0.5 or signals["funding_signal"] >= 0.5:
             signals["negative_signal"] = min(signals["negative_signal"], 0.2)
 
         return signals
 
     # -----------------------------
-    # Structured Info Extraction
+    # Collect DDG Snippets (parallel)
     # -----------------------------
-    def extract_structured_info(self, snippets, company_name):
+    def collect_snippets(self, company_name):
+        snippets = []
+        queries = ["company size", "founded", "headquarters", "industry profile", "about us"]
+        try:
+            with DDGS() as ddgs, ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(ddgs.text, f"{company_name} {q}", 3) for q in queries]
+                for future in as_completed(futures):
+                    try:
+                        results = list(future.result())
+                        for r in results:
+                            b = r.get("body") or ""
+                            if b:
+                                snippets.append(b)
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"[collect_snippets] DDGS error for {company_name}: {e}")
+        return snippets
+
+    # -----------------------------
+    # Robust JSON parsing utility
+    # -----------------------------
+    def _robust_parse_json(self, raw_text):
+        """
+        Try multiple strategies to parse LLM output into a Python dict:
+        1) strip code fences, extract first {...} block, try json.loads
+        2) ast.literal_eval (accepts single quotes / Python dicts)
+        3) attempt to quote unquoted keys and replace single->double quotes then json.loads
+        If all fail, raise ValueError with debug info.
+        """
+        if raw_text is None:
+            raise ValueError("No raw_text provided")
+
+        s = raw_text.strip()
+
+        # 1) remove fenced code blocks (```json ... ``` or ``` ...)
+        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.I | re.M)
+        s = re.sub(r"```$", "", s, flags=re.I | re.M)
+        # 2) trim to first {...} ... last } if they exist (helps when assistant adds explanation)
+        first = s.find("{")
+        last = s.rfind("}")
+        if first != -1 and last != -1 and last > first:
+            s_inner = s[first:last + 1]
+        else:
+            s_inner = s
+
+        # Try json.loads directly
+        try:
+            return json.loads(s_inner)
+        except Exception as e_json:
+            # Try ast.literal_eval to accept single quotes / python-style dict
+            try:
+                parsed = ast.literal_eval(s_inner)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception as e_ast:
+                # Try to transform unquoted keys to quoted keys
+                try:
+                    # add quotes around unquoted keys like: {company_name: "X"} -> {"company_name": "X"}
+                    s_keys = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)\s*:', r'\1"\2":', s_inner)
+                    # replace single quotes delimiting strings -> double quotes
+                    s_quotes = s_keys.replace("'", '"')
+                    return json.loads(s_quotes)
+                except Exception as e_try:
+                    # Give a helpful exception with examples of why parsing failed
+                    short = s_inner[:1000].replace("\n", " ")
+                    raise ValueError(f"Failed JSON parse. json_err={e_json}; ast_err={e_ast}; fix_err={e_try}; raw_preview={short}")
+
+    # -----------------------------
+    # Ollama Extraction with Schema Enforcement
+    # -----------------------------
+    def extract_structured_info(self, company_name, description, snippets, retries=2):
+        """
+        Ask the model to produce a strict JSON with the fixed schema.
+        Attempt parsing robustly and retry if needed.
+        Returns a dict with stable keys.
+        """
+
+        # fixed output schema (defaults used as fallback)
+        schema = {
+            "company_name": company_name,
+            "founded_year": "Unknown",
+            "employees_count": "Unknown",
+            "headquarters": "Unknown",
+            "industry": "Unknown",
+            "description": (description or "")[:500],
+            "products": [],
+            "services": []
+        }
+
+        # build context
         snippets_text = " ".join(snippets)[:2000]
-        snippets_text = re.sub(r'[\r\n]+', ' ', snippets_text)
-        snippets_text = re.sub(r'["]', "'", snippets_text)
+        context = f"DESCRIPTION:\n{(description or '')}\n\nSNIPPETS:\n{snippets_text}"
 
-        founded_year = "Unknown"
-        year_match = re.search(r"(founded\s+in\s+|established\s+in\s+)(\d{4})", snippets_text, re.I)
-        if year_match:
-            founded_year = year_match.group(2)
-
-        employees = "Unknown"
-        emp_match = re.search(r"(\d{2,6})\+?\s+(employees|staff)", snippets_text, re.I)
-        if emp_match:
-            employees = emp_match.group(1)
-
-        headquarters = "Unknown"
-        city_match = self.city_regex.search(snippets_text)
-        if city_match:
-            headquarters = city_match.group(1)
+        # strict prompt instructing double quotes and exact keys
+        prompt = (
+            "You are a company information extractor. RETURN ONLY a single JSON object and NOTHING else. "
+            "The JSON MUST use double quotes for keys and string values, and must contain exactly the following keys:\n"
+            '["company_name","founded_year","employees_count","headquarters","industry","description","products","services"]\n'
+            "Each field should be a string, except products and services which should be arrays of strings. "
+            "If a value is not available, use the string \"Unknown\" (for strings) or an empty array (for lists). "
+            "Do NOT add commentary, explanation, or extra fields. Do NOT wrap the JSON in markdown fences."
+        )
 
         messages = [
-            {"role": "system", "content": "You are a company info extractor. Return ONLY valid JSON in a single line. Use 'Unknown' if field not found."},
-            {"role": "user", "content": f"Extract structured info about {company_name} from this text:\n{snippets_text}"}
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"Extract the JSON for {company_name} from the following context:\n\n{context}"}
         ]
 
-        info = {}
-        try:
-            response = chat(model=self.model, messages=messages, options={"temperature": 0, "top_p": 1})
-            content = response['message']['content'].strip()
-            content = re.sub(r"^```(json)?|```$", "", content, flags=re.MULTILINE).strip()
-            info = json.loads(content)
-        except Exception as e:
-            print(f"Ollama chat error for {company_name}: {e}")
-            info = {}
+        last_err = None
+        for attempt in range(retries + 1):
+            try:
+                response = chat(model=self.model, messages=messages, options={"temperature": 0, "top_p": 1})
+                raw = response.get("message", {}).get("content")
+                if raw is None:
+                    raw = response.get("content") or ""
+                raw = (raw or "").strip()
 
-        return {
-            "name": info.get("name") or company_name,
-            "founded_year": info.get("founded_year") or founded_year,
-            "employees_count": info.get("employees_count") or employees,
-            "headquarters": info.get("headquarters") or headquarters,
-            "industry": info.get("industry") or "Unknown",
-            "description": info.get("description") or f"{company_name} is a company with growing market presence."
-        }
+                # Try robust parse
+                parsed = self._robust_parse_json(raw)
+
+                # Normalize keys: lower-case and ensure exact schema keys
+                normalized = {}
+                for k in schema.keys():
+                    if k in parsed:
+                        normalized[k] = parsed[k]
+                    else:
+                        # try variants (like "Company Name", "companyName", etc.)
+                        for pkey in parsed.keys():
+                            lk = str(pkey).lower().replace(" ", "_")
+                            if lk == k:
+                                normalized[k] = parsed[pkey]
+                                break
+                        else:
+                            normalized[k] = schema[k]  # fallback
+
+                # Post-process types: ensure lists for products/services and strings for others
+                if not isinstance(normalized.get("products"), list):
+                    normalized["products"] = normalized["products"] if normalized["products"] is not None else []
+                    if not isinstance(normalized["products"], list):
+                        normalized["products"] = [str(normalized["products"])] if normalized["products"] != "Unknown" else []
+                if not isinstance(normalized.get("services"), list):
+                    normalized["services"] = normalized["services"] if normalized["services"] is not None else []
+                    if not isinstance(normalized["services"], list):
+                        normalized["services"] = [str(normalized["services"])] if normalized["services"] != "Unknown" else []
+
+                # Convert non-string simple fields to strings (for uniformity)
+                for k in ["company_name", "founded_year", "employees_count", "headquarters", "industry", "description"]:
+                    v = normalized.get(k, "Unknown")
+                    if v is None:
+                        normalized[k] = "Unknown"
+                    elif isinstance(v, (list, dict)):
+                        normalized[k] = json.dumps(v)
+                    else:
+                        normalized[k] = str(v)
+
+                return normalized
+
+            except Exception as e:
+                last_err = e
+                preview = ""
+                try:
+                    preview = raw[:1000].replace("\n", " ")
+                except:
+                    preview = "<no preview>"
+                print(f"[extract_structured_info] parse attempt {attempt+1} failed for {company_name}: {e}. raw_preview={preview}")
+                if attempt < retries:
+                    time.sleep(1)  # small backoff and retry
+                    continue
+                else:
+                    print(f"[extract_structured_info] All retries failed for {company_name}. Returning fallback schema.")
+                    return schema
 
     # -----------------------------
     # Main enrichment
     # -----------------------------
     def enrich_lead(self, company_name, website):
-        enrichment = {
+        description = self.scrape_about(website)
+        snippets = self.collect_snippets(company_name)
+        signals = self.duckduckgo_signals(company_name)
+        info = self.extract_structured_info(company_name, description, snippets)
+
+        return {
             "company": company_name,
             "website": website,
-            "description": self.scrape_about(website),
+            "description": description,
             "hiring": self.detect_hiring(website),
-            "industry_keywords": [],
+            "funding_signal": signals["funding_signal"],
+            "expansion_signal": signals["expansion_signal"],
+            "negative_signal": signals["negative_signal"],
+            "structured_info": info
         }
-
-        # Industry inference
-        desc_lower = enrichment["description"].lower()
-        keywords_found = []
-        industry_guess = None
-        for kw, mapped_industry in self.industry_map.items():
-            if kw in desc_lower:
-                keywords_found.append(kw)
-                industry_guess = mapped_industry if not industry_guess else industry_guess
-        enrichment["industry_keywords"] = list(set(keywords_found))
-
-        # Add signals
-        try:
-            enrichment.update(self.duckduckgo_signals(company_name))
-        except Exception as e:
-            print(f"Skipping DDG signals for {company_name} due to error: {e}")
-
-        # Collect DDG snippets
-        ddg_snippets = []
-        queries = ["company size", "founded", "headquarters", "industry"]
-        try:
-            with DDGS() as ddgs:
-                for q in queries:
-                    try:
-                        results = list(ddgs.text(f"{company_name} {q}", max_results=3))
-                        for r in results:
-                            ddg_snippets.append(r.get("body") or "")
-                    except Exception as e:
-                        print(f"DDG snippet fetch failed for {company_name} ({q}): {e}")
-        except Exception as e:
-            print(f"DDG initialization failed for {company_name}: {e}")
-
-        # Structured info extraction
-        ollama_info = self.extract_structured_info(ddg_snippets, company_name)
-        if ollama_info["industry"] == "Unknown" and industry_guess:
-            ollama_info["industry"] = industry_guess
-
-        enrichment["structured_info"] = ollama_info
-        return enrichment
 
 
 # -----------------------------
-# Run Multiple Companies Safely
+# Run Multiple Companies
 # -----------------------------
 if __name__ == "__main__":
     agent = EnrichmentAgent(model="mistral:latest")
 
-    # Load companies.json
-    input_file = os.path.join("inputs", "companies.json")
-    with open(input_file, "r", encoding="utf-8") as f:
+    with open("inputs/companies.json", "r", encoding="utf-8") as f:
         companies = json.load(f)
 
-    all_enriched = []
-
+    enriched = []
     for comp in companies:
-        print(f"\nEnriching: {comp['name']} ...")
-        try:
-            enriched_data = agent.enrich_lead(comp["name"], comp["website"])
-        except Exception as e:
-            print(f"Failed to enrich {comp['name']}: {e}")
-            enriched_data = {"company": comp['name'], "error": str(e)}
-        all_enriched.append(enriched_data)
-        time.sleep(1)  # small delay to reduce network issues
+        print(f"Enriching: {comp['name']}")
+        enriched.append(agent.enrich_lead(comp["name"], comp["website"]))
+        time.sleep(1)   # polite pacing between companies
 
-    # Save to outputs/enriched_companies.json
     os.makedirs("outputs", exist_ok=True)
-    output_file = os.path.join("outputs", "enriched_companies.json")
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(all_enriched, f, indent=2, ensure_ascii=False)
+    with open("outputs/enriched_companies.json", "w", encoding="utf-8") as f:
+        json.dump(enriched, f, indent=2, ensure_ascii=False)
 
-    print(f"\nEnrichment complete! Saved to {output_file}")
+    print("✅ Done. Results saved to outputs/enriched_companies.json")

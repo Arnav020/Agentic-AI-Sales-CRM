@@ -1,60 +1,49 @@
 [
   {
-    "company": "Chaayos",
-    "score": 83,
+    "company": "Swiggy",
+    "score": 40,
     "reasons": [
-      "Industry match",
-      "Keywords matched: tea, snack",
-      "HQ match",
+      "Partial HQ match",
       "Strong funding signal",
+      "Expansion activity detected",
       "Actively hiring",
       "Founded recently"
+    ]
+  },
+  {
+    "company": "BigBasket",
+    "score": 40,
+    "reasons": [
+      "Partial HQ match",
+      "Strong funding signal",
+      "Expansion activity detected",
+      "Actively hiring",
+      "Founded recently"
+    ]
+  },
+  {
+    "company": "Zomato",
+    "score": 37,
+    "reasons": [
+      "Partial industry match",
+      "Partial HQ match",
+      "Strong funding signal",
+      "Expansion activity detected",
+      "Not hiring"
     ]
   },
   {
     "company": "UrbanClap",
-    "score": 63,
+    "score": 32,
     "reasons": [
-      "Industry match",
-      "HQ match",
-      "Strong funding signal",
-      "Actively hiring",
-      "Founded recently"
-    ]
-  },
-  {
-    "company": "Swiggy",
-    "score": 33,
-    "reasons": [
+      "Partial HQ match",
       "Strong funding signal",
       "Expansion activity detected",
-      "Actively hiring",
-      "Founded recently"
+      "Actively hiring"
     ]
   },
   {
     "company": "Paytm",
-    "score": 33,
-    "reasons": [
-      "Strong funding signal",
-      "Expansion activity detected",
-      "Actively hiring",
-      "Founded recently"
-    ]
-  },
-  {
-    "company": "Byju's",
-    "score": 30,
-    "reasons": [
-      "HQ match",
-      "Strong funding signal",
-      "Not hiring",
-      "Founded recently",
-      "Employee size within target"
-    ]
-  },
-  {
-    "company": "Razorpay",
     "score": 28,
     "reasons": [
       "Strong funding signal",
@@ -63,38 +52,47 @@
     ]
   },
   {
-    "company": "Ola",
-    "score": 20,
+    "company": "Chaayos",
+    "score": 25,
     "reasons": [
       "Strong funding signal",
+      "Expansion activity detected",
       "Actively hiring"
     ]
   },
   {
-    "company": "Zomato",
-    "score": 15,
+    "company": "Razorpay",
+    "score": 25,
     "reasons": [
-      "HQ match",
       "Strong funding signal",
-      "Not hiring"
+      "Expansion activity detected",
+      "Actively hiring"
     ]
   },
   {
-    "company": "Flipkart",
-    "score": 15,
+    "company": "Ola",
+    "score": 17,
     "reasons": [
-      "HQ match",
-      "Strong funding signal",
-      "Not hiring"
+      "Partial HQ match",
+      "Actively hiring"
     ]
   },
   {
-    "company": "BigBasket",
+    "company": "Byju's",
     "score": 13,
     "reasons": [
       "Strong funding signal",
       "Not hiring",
       "Founded recently"
+    ]
+  },
+  {
+    "company": "Flipkart",
+    "score": 7,
+    "reasons": [
+      "Partial HQ match",
+      "Expansion activity detected",
+      "Not hiring"
     ]
   }
 ]
