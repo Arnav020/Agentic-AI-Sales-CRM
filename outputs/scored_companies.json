@@ -1,7 +1,7 @@
 [
   {
     "company": "Swiggy",
-    "score": 40,
+    "score": 53,
     "reasons": [
       "Partial HQ match",
       "Strong funding signal",
@@ -12,7 +12,7 @@
   },
   {
     "company": "BigBasket",
-    "score": 40,
+    "score": 53,
     "reasons": [
       "Partial HQ match",
       "Strong funding signal",
@@ -22,8 +22,18 @@
     ]
   },
   {
+    "company": "Chaayos",
+    "score": 45,
+    "reasons": [
+      "Keywords matched: tea",
+      "Strong funding signal",
+      "Expansion activity detected",
+      "Actively hiring"
+    ]
+  },
+  {
     "company": "Zomato",
-    "score": 37,
+    "score": 43,
     "reasons": [
       "Partial industry match",
       "Partial HQ match",
@@ -34,7 +44,7 @@
   },
   {
     "company": "UrbanClap",
-    "score": 32,
+    "score": 43,
     "reasons": [
       "Partial HQ match",
       "Strong funding signal",
@@ -44,7 +54,7 @@
   },
   {
     "company": "Paytm",
-    "score": 28,
+    "score": 37,
     "reasons": [
       "Strong funding signal",
       "Actively hiring",
@@ -52,17 +62,8 @@
     ]
   },
   {
-    "company": "Chaayos",
-    "score": 25,
-    "reasons": [
-      "Strong funding signal",
-      "Expansion activity detected",
-      "Actively hiring"
-    ]
-  },
-  {
     "company": "Razorpay",
-    "score": 25,
+    "score": 35,
     "reasons": [
       "Strong funding signal",
       "Expansion activity detected",
@@ -71,7 +72,7 @@
   },
   {
     "company": "Ola",
-    "score": 17,
+    "score": 23,
     "reasons": [
       "Partial HQ match",
       "Actively hiring"
@@ -79,7 +80,7 @@
   },
   {
     "company": "Byju's",
-    "score": 13,
+    "score": 12,
     "reasons": [
       "Strong funding signal",
       "Not hiring",
@@ -88,7 +89,7 @@
   },
   {
     "company": "Flipkart",
-    "score": 7,
+    "score": 6,
     "reasons": [
       "Partial HQ match",
       "Expansion activity detected",
