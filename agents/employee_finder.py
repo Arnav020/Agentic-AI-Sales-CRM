@@ -1,11 +1,11 @@
 # agents/employee_finder.py
 """
-Enhanced SalesEmployeeFinder with:
- - Configurable top % read from customer_requirements.json (default=15%)
- - Optional INDIA_FIRST flag for India-priority search
- - India-first employee search with global fallback (if enabled)
- - Robust DDGS with retries and logging
- - Deduplication, role filtering, and sanitized email guesses
+Multi-user compatible SalesEmployeeFinder
+------------------------------------------
+- Per-user inputs/outputs under /users/<user_id>/
+- Writes logs to /users/<user_id>/logs/employee_finder.log
+- Reads customer_requirements.json for top % configuration
+- Core logic unchanged
 """
 
 import time
@@ -16,21 +16,10 @@ import json
 import os
 from typing import List, Dict, Set
 from dataclasses import dataclass
+from pathlib import Path
 from ddgs import DDGS
 import requests
 
-# =====================
-# CONFIGURATION
-# =====================
-INDIA_FIRST = True  # 🔁 Toggle this: True = India-first + fallback | False = global only
-
-# =====================
-# Logging
-# =====================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-)
 
 # =====================
 # Data Model
@@ -53,19 +42,43 @@ class Employee:
 class SalesEmployeeFinder:
     def __init__(
         self,
+        user_root: str = None,
         max_employees_per_company: int = 3,
         search_delay: float = 3.0,
         request_timeout: int = 12,
-        ddgs_retries: int = 2
+        ddgs_retries: int = 2,
+        india_first: bool = True
     ):
+        """
+        user_root → path to the user's workspace (e.g. users/user_demo)
+        """
+        self.project_root = Path(__file__).resolve().parents[1]
+        self.user_root = Path(user_root) if user_root else self.project_root
+
+        # --- Directories ---
+        self.inputs_dir = self.user_root / "inputs"
+        self.outputs_dir = self.user_root / "outputs"
+        self.logs_dir = self.user_root / "logs"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- Logging ---
+        self.log_file = self.logs_dir / "employee_finder.log"
+        self._setup_logging()
+
+        # --- Configurable attributes ---
         self.max_employees = max_employees_per_company
         self.search_delay = search_delay
         self.request_timeout = request_timeout
         self.ddgs_retries = ddgs_retries
+        self.india_first = india_first
+
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
         })
+
+        # --- Regex & keywords ---
         self.title_separator_re = re.compile(r"\s*[-–—|]\s*")
         self.name_extract_re = re.compile(r"^([A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*)")
         self.linkedin_profile_re = re.compile(r"(https?://)?(www\.)?linkedin\.com/in/[\w\-%]+", re.I)
@@ -74,6 +87,21 @@ class SalesEmployeeFinder:
             "account manager", "partnership", "growth", "enterprise sales",
             "sales manager", "regional sales"
         ]
+
+    # -------------------------
+    # Logging Setup
+    # -------------------------
+    def _setup_logging(self):
+        logging.getLogger().handlers = []
+        logging.basicConfig(
+            filename=str(self.log_file),
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+        )
+        console = logging.StreamHandler()
+        console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        logging.getLogger().addHandler(console)
+        logging.info(f"Logging initialized for EmployeeFinder → {self.log_file}")
 
     # -------------------------
     # MAIN EMPLOYEE SEARCH LOGIC
@@ -89,20 +117,17 @@ class SalesEmployeeFinder:
             f'"account executive" "at {company_name}" "India" site:linkedin.com/in',
         ]
 
-        # Global queries (always available)
+        # Global queries
         global_queries = [
             f'"sales" "at {company_name}" site:linkedin.com/in',
             f'"business development" "at {company_name}" site:linkedin.com/in',
             f'"account executive" "at {company_name}" site:linkedin.com/in',
         ]
 
-        # =====================
-        # Mode Control
-        # =====================
-        if INDIA_FIRST:
+        if self.india_first:
             logging.info(f"🔍 Searching (India-first) employees for: {company_name}")
 
-            # Phase 1: Try India-first
+            # Phase 1: India-first
             for query in india_queries:
                 if len(employees) >= self.max_employees:
                     break
@@ -116,7 +141,7 @@ class SalesEmployeeFinder:
                         break
                 time.sleep(self.search_delay + random.uniform(0, 1.2))
 
-            # Phase 2: Fallback to global if none found
+            # Phase 2: fallback
             if not employees:
                 logging.info(f"No India-based results for {company_name}. Falling back to global search.")
                 for query in global_queries:
@@ -131,7 +156,6 @@ class SalesEmployeeFinder:
                         if len(employees) >= self.max_employees:
                             break
                     time.sleep(self.search_delay + random.uniform(0, 1.2))
-
         else:
             logging.info(f"🌐 Searching (Global-only) employees for: {company_name}")
             for query in global_queries:
@@ -244,73 +268,99 @@ class SalesEmployeeFinder:
 
         return employees
 
+    # -------------------------
+    # RUNNER
+    # -------------------------
+    def run(self):
+        logging.info("🚀 Starting employee finder...")
 
-# =====================
-# Main
-# =====================
-def main():
-    inputs_dir = "outputs"
-    outputs_dir = "outputs"
-    os.makedirs(outputs_dir, exist_ok=True)
+        scored_companies_file = self.outputs_dir / "scored_companies.json"
+        requirements_file = self.inputs_dir / "customer_requirements.json"
+        employees_output_file = self.outputs_dir / "employees_companies.json"
 
-    scored_companies_file = os.path.join(inputs_dir, "scored_companies.json")
-    requirements_file = os.path.join("inputs", "customer_requirements.json")
-    employees_output_file = os.path.join(outputs_dir, "employees_companies.json")
+        if not scored_companies_file.exists() or not requirements_file.exists():
+            logging.error("❌ Missing input files. Make sure scoring_agent and inputs are ready.")
+            return
 
-    # Load customer requirements (for % config)
-    try:
-        with open(requirements_file, "r", encoding="utf-8") as f:
-            customer_reqs = json.load(f)
-        pct_default = float(customer_reqs.get("employee_search_top_percent", 0.15))
-    except Exception:
-        pct_default = 0.15
-
-    # Load scored companies
-    with open(scored_companies_file, "r", encoding="utf-8") as f:
-        scored_companies = json.load(f)
-
-    total = len(scored_companies)
-    if total == 0:
-        print("No scored companies found. Exiting.")
-        return
-
-    top_count = max(1, int(total * pct_default))
-    logging.info(f"Configured to search top {pct_default*100:.0f}% ({top_count} of {total}) companies for employees.")
-    logging.info(f"Search mode: {'India-first with fallback' if INDIA_FIRST else 'Global only'}")
-
-    finder = SalesEmployeeFinder(max_employees_per_company=3, search_delay=2.0, request_timeout=12, ddgs_retries=2)
-
-    results = []
-    for comp in scored_companies[:top_count]:
-        company_name = comp.get("company") or comp.get("company_name") or ""
-        if not company_name:
-            continue
-        logging.info(f"Finding employees for {company_name} ...")
         try:
-            employees = finder.search_company_employees(company_name)
-        except Exception as e:
-            logging.error(f"Error searching for {company_name}: {e}")
-            employees = []
+            with open(requirements_file, "r", encoding="utf-8") as f:
+                customer_reqs = json.load(f)
+            pct_default = float(customer_reqs.get("employee_search_top_percent", 0.15))
+        except Exception:
+            pct_default = 0.15
 
-        results.append({
-            "company": company_name,
-            "num_found": len(employees),
-            "employees": [
-                {
-                    "name": e.name,
-                    "title": e.title,
-                    "linkedin_url": e.linkedin_url,
-                    "email_guess": e.email,
-                    "confidence": e.confidence_score
-                } for e in employees
-            ]
-        })
+        with open(scored_companies_file, "r", encoding="utf-8") as f:
+            scored_companies = json.load(f)
 
-    with open(employees_output_file, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
+        total = len(scored_companies)
+        if total == 0:
+            logging.warning("No scored companies found. Exiting.")
+            return
 
-    print(f"\n✅ Employee search complete! Results saved to {employees_output_file}")
+        top_count = max(1, int(total * pct_default))
+        logging.info(f"Configured to search top {pct_default*100:.0f}% ({top_count} of {total}) companies.")
+        logging.info(f"Search mode: {'India-first with fallback' if self.india_first else 'Global only'}")
+
+        results = []
+        for comp in scored_companies[:top_count]:
+            company_name = comp.get("company") or comp.get("company_name") or ""
+            if not company_name:
+                continue
+            logging.info(f"Finding employees for {company_name} ...")
+            try:
+                employees = self.search_company_employees(company_name)
+            except Exception as e:
+                logging.error(f"Error searching for {company_name}: {e}")
+                employees = []
+
+            results.append({
+                "company": company_name,
+                "num_found": len(employees),
+                "employees": [
+                    {
+                        "name": e.name,
+                        "title": e.title,
+                        "linkedin_url": e.linkedin_url,
+                        "email_guess": e.email,
+                        "confidence": e.confidence_score
+                    } for e in employees
+                ]
+            })
+
+        with open(employees_output_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+
+        logging.info(f"✅ Employee search complete. Results saved to {employees_output_file}")
+        print(f"✅ Employee search complete. Results saved to {employees_output_file}")
+
+
+# =====================
+# Runner / Entrypoint for both Orchestrator and Standalone use
+# =====================
+def main(user_folder: str | None = None):
+    """
+    Main entrypoint for SalesEmployeeFinder.
+    Supports both:
+      • Orchestrator import: main("users/user_demo")
+      • Standalone CLI: python agents/employee_finder.py user_demo
+    """
+    if user_folder:
+        user_path = Path(user_folder)
+    else:
+        env_user = os.getenv("USER_FOLDER")
+        user_path = Path(env_user) if env_user else None
+
+    finder = SalesEmployeeFinder(user_root=user_path)
+    finder.run()
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    user_arg = sys.argv[1] if len(sys.argv) >= 2 else None
+    if user_arg:
+        user_folder = str(Path("users") / user_arg)
+    else:
+        user_folder = None
+
+    main(user_folder)
+

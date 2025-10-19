@@ -1,22 +1,20 @@
 # agents/scoring_agent.py
 """
-Patched scoring agent with:
-- Semantic similarity via sentence-transformers embeddings (no on-disk cache)
-- Keyword expansion
-- Robust employee parsing
-- Downweighting of generic "technology" industry terms
-- Boost for domain+tech hybrids (e.g., "FoodTech", "FinTech")
-- Clear scoring breakdown and human-readable reasons
-
-Requires:
-    pip install sentence-transformers numpy
+Multi-user compatible Scoring Agent
+-----------------------------------
+- Reads inputs/outputs per user under /users/<user_id>/.
+- Keeps the original scoring logic unchanged.
+- Adds per-user logging in /users/<user_id>/logs/scoring_agent.log.
+- Can be run standalone or from main.py with a user argument.
 """
 
 import json
 import os
 import re
 import math
+import logging
 from typing import List, Dict
+from pathlib import Path
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 from difflib import SequenceMatcher
@@ -31,7 +29,6 @@ def normalize(text) -> str:
     if not text:
         return ""
     if isinstance(text, list):
-        # take first non-empty string
         text = next((str(t) for t in text if isinstance(t, str) and t.strip()), "")
     text = str(text).lower().strip()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
@@ -41,11 +38,11 @@ def normalize(text) -> str:
     return text.strip()
 
 
-
 def parse_employees(emp_raw) -> int:
     if not emp_raw:
         return 0
     s = str(emp_raw).lower().strip().replace(",", "").replace(" ", "")
+
     def conv(x):
         try:
             mult = 1
@@ -62,17 +59,16 @@ def parse_employees(emp_raw) -> int:
         except Exception:
             return None
 
-    # range "100-500" or "1k-5k"
     if "-" in s:
         lo, hi = s.split("-", 1)
         lo_v, hi_v = conv(lo), conv(hi)
         if lo_v and hi_v:
             return (lo_v + hi_v) // 2
-    # single value or "5000+"
+
     val = conv(s)
     if val:
         return val
-    # fallback: find first integer
+
     m = re.search(r"\d+", s)
     if m:
         try:
@@ -95,12 +91,9 @@ def cos_sim(a, b):
     if a is None or b is None:
         return 0.0
     try:
-        # util.cos_sim returns a tensor; cast to float
         sim = util.cos_sim(a, b)
-        # handle 0-d or 1-d
         if hasattr(sim, "item"):
             return float(sim.item())
-        # fallback to numpy
         arr = np.array(sim)
         if arr.size:
             return float(arr.flat[0])
@@ -122,8 +115,8 @@ def cos_sim(a, b):
 # -----------------------------
 class ScoringAgent:
     GENERIC_INDUSTRY_TERMS = {
-        "technology", "tech", "information technology", "it", "software", "digital", "platform", "internet",
-        "online", "saas", "cloud", "it services"
+        "technology", "tech", "information technology", "it", "software", "digital", "platform",
+        "internet", "online", "saas", "cloud", "it services"
     }
 
     DOMAIN_KEYWORD_HINTS = {
@@ -131,53 +124,91 @@ class ScoringAgent:
         "finance": {"finance", "financial", "fintech", "payment", "payments", "loan", "credit", "wallet"},
         "education": {"education", "edtech", "learning", "school", "tutor"},
         "health": {"health", "healthcare", "med", "telehealth"},
-        # extend as needed
     }
 
-    def __init__(self, requirements_file: str, companies_file: str):
-        with open(requirements_file, "r", encoding="utf-8") as f:
+    def __init__(self, user_root: str = None):
+        """
+        user_root: Path to user's folder (e.g., users/user_demo).
+        If None, defaults to repo-level inputs/outputs for backward compatibility.
+        """
+        self.project_root = Path(__file__).resolve().parents[1]
+        if user_root:
+            self.user_root = Path(user_root)
+        else:
+            self.user_root = self.project_root
+
+        # Define per-user directories
+        self.inputs_dir = self.user_root / "inputs"
+        self.outputs_dir = self.user_root / "outputs"
+        self.logs_dir = self.user_root / "logs"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Configure per-user logging
+        self.log_file = self.logs_dir / "scoring_agent.log"
+        self._setup_logging()
+
+        # File paths
+        self.requirements_file = self.inputs_dir / "customer_requirements.json"
+        self.companies_file = self.outputs_dir / "enriched_companies.json"
+        self.output_file = self.outputs_dir / "scored_companies.json"
+
+        # Load inputs
+        if not self.requirements_file.exists() or not self.companies_file.exists():
+            logging.error("❌ Missing input files for scoring agent.")
+            raise FileNotFoundError("Inputs not found for ScoringAgent")
+
+        with open(self.requirements_file, "r", encoding="utf-8") as f:
             self.requirements = json.load(f)
-        with open(companies_file, "r", encoding="utf-8") as f:
+        with open(self.companies_file, "r", encoding="utf-8") as f:
             self.companies = json.load(f)
 
-        # weights (tunable)
+        # Weights (kept same)
         self.weights = {
-            "industry": 38,        # ↑ strongest signal — must dominate
-            "keywords": 32,        # ↑ more weight to product/service semantics
-            "hq": 10,              # ↑ HQ matters more for regional focus
-            "funding": 7,          # ↓ funding should not overshadow domain fit
-            "expansion": 6,        # ↓ expansion less relevant to domain match
-            "negative": -8,        # same — penalize strongly negative sentiment
-            "momentum": 4,         # ↓ smaller influence
-            "hiring": 6,           # stable, keeps operational realism
-            "founded_year": 3,     # ↓ small stabilizing influence
-            "employees": 3,        # ↓ prevent big corps from dominating
+            "industry": 38, "keywords": 32, "hq": 10,
+            "funding": 7, "expansion": 6, "negative": -8,
+            "momentum": 4, "hiring": 6, "founded_year": 3, "employees": 3,
         }
 
-
-        # model - no caching to disk per your request
+        # Sentence-transformers model
         self.model = SentenceTransformer(MODEL_NAME)
 
-        # prepare requirement artifacts
+        # Prepare embeddings
         self.req_industries = [normalize(x) for x in self.requirements.get("industry", [])]
         self.req_kw_list = self._expand_keywords(self.requirements.get("preferred_keywords", []))
         self.req_hq_text = " ".join(self.requirements.get("headquarters", []))
 
-        # encode requirement embeddings (in-memory only)
-        if self.req_industries:
-            self.req_ind_embs = self.model.encode(self.req_industries, convert_to_tensor=True)
-        else:
-            self.req_ind_embs = None
+        self.req_ind_embs = (
+            self.model.encode(self.req_industries, convert_to_tensor=True)
+            if self.req_industries else None
+        )
+        self.req_kw_emb = (
+            self.model.encode(" ".join(self.req_kw_list), convert_to_tensor=True)
+            if self.req_kw_list else None
+        )
+        self.req_hq_emb = (
+            self.model.encode(self.req_hq_text, convert_to_tensor=True)
+            if self.req_hq_text else None
+        )
 
-        self.req_kw_emb = self.model.encode(" ".join(self.req_kw_list), convert_to_tensor=True) if self.req_kw_list else None
-        self.req_hq_emb = self.model.encode(self.req_hq_text, convert_to_tensor=True) if self.req_hq_text else None
-
-        # Precompute normalized domain set for hybrid detection
         self._req_domain_tokens = set()
         for ind in self.req_industries:
             toks = re.findall(r"\b[a-z]{3,30}\b", ind)
-            for t in toks:
-                self._req_domain_tokens.add(t)
+            self._req_domain_tokens.update(toks)
+
+    # -----------------------------
+    def _setup_logging(self):
+        """Initialize per-user log file."""
+        logging.getLogger().handlers = []
+        logging.basicConfig(
+            filename=str(self.log_file),
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+        )
+        console = logging.StreamHandler()
+        console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        logging.getLogger().addHandler(console)
+        logging.info(f"Logging initialized for ScoringAgent → {self.log_file}")
 
     # -----------------------------
     def _expand_keywords(self, keywords: List[str]) -> List[str]:
@@ -200,6 +231,8 @@ class ScoringAgent:
         return sorted(kws)
 
     # -----------------------------
+    # Rest of logic stays EXACTLY the same (scoring logic untouched)
+    # -----------------------------
     def extract_keywords(self, company: Dict) -> List[str]:
         s = company.get("structured_info", {}) or {}
         parts = [
@@ -212,23 +245,19 @@ class ScoringAgent:
         tokens = re.findall(r"\b[a-z]{3,30}\b", text)
         return sorted({normalize(t) for t in tokens if len(t) >= 3})
 
-    # -----------------------------
     def _detect_domain_hint(self, industry_text: str) -> str:
-        """Return a likely domain hint based on industry_text or requirements intersection."""
         it = industry_text.lower()
         for domain, hintset in self.DOMAIN_KEYWORD_HINTS.items():
-            for h in hintset:
-                if h in it:
-                    return domain
-        # fallback: check requirement industries tokens for hints
+            if any(h in it for h in hintset):
+                return domain
         for token in self._req_domain_tokens:
-            if token in it:
-                # map token to domain if present in hints
-                for domain, hintset in self.DOMAIN_KEYWORD_HINTS.items():
-                    if token in hintset:
-                        return domain
+            for domain, hintset in self.DOMAIN_KEYWORD_HINTS.items():
+                if token in hintset and token in it:
+                    return domain
         return ""
 
+    # -----------------------------
+    # Full scoring logic unchanged
     # -----------------------------
     def score_company(self, company: Dict) -> Dict:
         s = company.get("structured_info", {}) or {}
@@ -439,21 +468,42 @@ class ScoringAgent:
         results = [self.score_company(c) for c in self.companies]
         return sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
 
+    # -----------------------------
+    def run(self, top_n=50):
+        logging.info("🚀 Starting scoring process...")
+        results = self.rank_companies(top_n=top_n)
+        with open(self.output_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        logging.info(f"✅ Scoring complete. Saved {len(results)} results → {self.output_file}")
+        print(f"✅ Scoring complete. Saved {len(results)} results to {self.output_file}")
 
 # -----------------------------
-# CLI
+# Runner / Entrypoint for both Orchestrator and Standalone use
 # -----------------------------
+def main(user_folder: str | None = None):
+    """
+    Main entrypoint for ScoringAgent.
+    Works both:
+      - From orchestrator (via import + main())
+      - As standalone CLI (python agents/scoring_agent.py user_demo)
+    """
+    if user_folder:
+        user_path = Path(user_folder)
+    else:
+        env_user = os.getenv("USER_FOLDER")
+        user_path = Path(env_user) if env_user else None
+
+    agent = ScoringAgent(user_root=user_path)
+    agent.run(top_n=50)
+
+
 if __name__ == "__main__":
-    inputs_dir = "inputs"
-    outputs_dir = "outputs"
-    os.makedirs(outputs_dir, exist_ok=True)
+    import sys
+    user_arg = sys.argv[1] if len(sys.argv) >= 2 else None
+    if user_arg:
+        user_folder = str(Path("users") / user_arg)
+    else:
+        user_folder = None
 
-    requirements_file = os.path.join(inputs_dir, "customer_requirements.json")
-    companies_file = os.path.join(outputs_dir, "enriched_companies.json")
-    output_file = os.path.join(outputs_dir, "scored_companies.json")
+    main(user_folder)
 
-    agent = ScoringAgent(requirements_file, companies_file)
-    top = agent.rank_companies(top_n=50)
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(top, f, indent=2, ensure_ascii=False)
-    print(f"✅ Semantic scoring complete. Saved {len(top)} results to {output_file}")

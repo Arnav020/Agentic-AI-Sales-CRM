@@ -1,10 +1,11 @@
 # agents/contact_finder.py
 """
-Agentic CRM Contact Finder (Sequential Multi-Account Verifalia)
- - Uses up to 3 Verifalia accounts sequentially (no wraparound)
- - Verifies only ONE best employee per company (fallbacks only if needed)
- - Always keeps consistent JSON output schema
- - Stops gracefully when all accounts exhausted
+Multi-user compatible Agentic CRM Contact Finder
+-------------------------------------------------
+- Runs under users/<user_id>/ directory
+- Logs to users/<user_id>/logs/contact_finder.log
+- Uses up to 3 Verifalia accounts sequentially
+- Keeps full core logic unchanged
 """
 
 import time
@@ -15,20 +16,16 @@ import os
 import re
 from typing import List, Dict
 from dataclasses import dataclass
+from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+
 # =====================
-# Setup & Logging
+# Load env
 # =====================
 load_dotenv()
-os.makedirs("logs", exist_ok=True)
-os.makedirs("outputs", exist_ok=True)
-logging.basicConfig(
-    filename="logs/contact_finder.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+
 
 # =====================
 # Config
@@ -36,6 +33,7 @@ logging.basicConfig(
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2
 API_BASE = "https://api.verifalia.com/v2.7"
+
 
 # =====================
 # Data Model
@@ -54,7 +52,7 @@ class Employee:
 
 
 # =====================
-# Email Pattern Generator (Weighted Order)
+# Email Pattern Generator
 # =====================
 class EmailPermutationGenerator:
     @staticmethod
@@ -70,9 +68,6 @@ class EmailPermutationGenerator:
         first = parts[0]
         last = parts[-1] if len(parts) > 1 else ""
         domain = re.sub(r"[^a-z0-9]", "", company.lower()) + ".com"
-
-        # Candidate patterns with relative likelihood weights
-        candidates = []
 
         if last:
             candidates = [
@@ -93,23 +88,21 @@ class EmailPermutationGenerator:
                 (f"{first}.{first[0]}@{domain}", 0.05),
             ]
 
-        # Sort by weight descending, remove duplicates
         sorted_candidates = sorted(candidates, key=lambda x: -x[1])
         patterns = list(dict.fromkeys([c[0] for c in sorted_candidates]))
-
         return patterns
-
 
 
 # =====================
 # Verifalia Verifier
 # =====================
 class VerifaliaVerifier:
-    def __init__(self, accounts: List[Dict[str, str]]):
+    def __init__(self, accounts: List[Dict[str, str]], logger: logging.Logger):
         self.accounts = accounts
         self.current_idx = 0
         self.session = requests.Session()
         self.out_of_credits = False
+        self.logger = logger
         self._set_auth_header()
 
     def _set_auth_header(self):
@@ -120,20 +113,19 @@ class VerifaliaVerifier:
             "Content-Type": "application/json",
             "User-Agent": f"AgenticCRM/EmailVerifier/{self.current_idx+1}"
         })
-        logging.info(f"🔐 Using Verifalia account #{self.current_idx+1}: {creds['user']}")
+        self.logger.info(f"🔐 Using Verifalia account #{self.current_idx+1}: {creds['user']}")
 
     def _rotate_account(self):
         if self.current_idx + 1 < len(self.accounts):
             self.current_idx += 1
             self._set_auth_header()
-            logging.info(f"🔁 Switched to Verifalia account #{self.current_idx+1}")
+            self.logger.info(f"🔁 Switched to Verifalia account #{self.current_idx+1}")
             time.sleep(1.0)
         else:
-            logging.error("❌ All Verifalia accounts exhausted. Stopping verification.")
+            self.logger.error("❌ All Verifalia accounts exhausted. Stopping verification.")
             self.out_of_credits = True
 
     def verify_email(self, email: str) -> Dict:
-        """Submit email to Verifalia API."""
         if self.out_of_credits:
             return self._default_result(email, "all_accounts_exhausted")
 
@@ -148,14 +140,14 @@ class VerifaliaVerifier:
                 elif r.status_code == 200:
                     return self._parse_result(r.json())
                 elif r.status_code in (401, 402, 429):
-                    logging.warning(f"⚠️ Account #{self.current_idx+1} hit limit ({r.status_code}).")
+                    self.logger.warning(f"⚠️ Account #{self.current_idx+1} hit limit ({r.status_code}).")
                     self._rotate_account()
                     return self._default_result(email, "rotated_account")
                 else:
-                    logging.warning(f"Unexpected response {r.status_code}: {r.text}")
+                    self.logger.warning(f"Unexpected response {r.status_code}: {r.text}")
                     time.sleep(RETRY_BACKOFF)
             except Exception as e:
-                logging.error(f"Error verifying {email}: {e}")
+                self.logger.error(f"Error verifying {email}: {e}")
                 time.sleep(RETRY_BACKOFF)
         return self._default_result(email, "api_error")
 
@@ -169,7 +161,7 @@ class VerifaliaVerifier:
                         return self._parse_result(data)
                 time.sleep(2)
             except Exception as e:
-                logging.warning(f"Polling failed for {job_id}: {e}")
+                self.logger.warning(f"Polling failed for {job_id}: {e}")
         return self._default_result("", "timeout")
 
     def _parse_result(self, data: Dict) -> Dict:
@@ -189,7 +181,7 @@ class VerifaliaVerifier:
                 "verified": True
             }
         except Exception as e:
-            logging.error(f"Parse error: {e}")
+            self.logger.error(f"Parse error: {e}")
             return self._default_result("", "parse_error")
 
     def _default_result(self, email: str, reason: str) -> Dict:
@@ -206,102 +198,160 @@ class VerifaliaVerifier:
 # =====================
 # Main Runner
 # =====================
-def verify_emails_from_json(input_file: str, output_file: str):
-    with open(input_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
+class ContactFinderAgent:
+    def __init__(self, user_root: str = None):
+        self.project_root = Path(__file__).resolve().parents[1]
+        self.user_root = Path(user_root) if user_root else self.project_root
 
-    accounts = []
-    for i in range(1, 4):
-        u = os.getenv(f"VERIFALIA_USER_{i}")
-        p = os.getenv(f"VERIFALIA_PASS_{i}")
-        if u and p:
-            accounts.append({"user": u, "pass": p})
-    if not accounts:
-        u = os.getenv("VERIFALIA_USER", "ajoshi4_be23@thapar.edu")
-        p = os.getenv("VERIFALIA_PASS", "")
-        accounts.append({"user": u, "pass": p})
+        self.inputs_dir = self.user_root / "inputs"
+        self.outputs_dir = self.user_root / "outputs"
+        self.logs_dir = self.user_root / "logs"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
 
-    verifier = VerifaliaVerifier(accounts)
+        self.log_file = self.logs_dir / "contact_finder.log"
+        self.logger = self._setup_logging()
 
-    verified_count = 0
-    skipped_count = 0
+    def _setup_logging(self) -> logging.Logger:
+        logger = logging.getLogger(f"ContactFinder_{self.user_root}")
+        logger.setLevel(logging.INFO)
+        handler = logging.FileHandler(self.log_file)
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        logger.addHandler(console)
+        logger.info(f"Logging initialized for ContactFinder → {self.log_file}")
+        return logger
 
-    for company in data:
-        company_name = company.get("company", "")
-        employees = company.get("employees", [])
-        if not employees:
-            continue
+    def run(self):
+        input_json = self.outputs_dir / "employees_companies.json"
+        output_json = self.outputs_dir / "employees_email.json"
 
-        # Sort by confidence descending
-        employees_sorted = sorted(employees, key=lambda e: e.get("confidence", 0), reverse=True)
+        if not input_json.exists():
+            self.logger.error("❌ Input file not found. Run employee_finder first.")
+            return
 
-        found_valid = False
-        verified_emp = None
+        with open(input_json, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-        for emp in employees_sorted:
-            if verifier.out_of_credits:
-                company["verification_status"] = "skipped_out_of_credit"
-                skipped_count += 1
-                break
+        # Load Verifalia accounts
+        accounts = []
+        for i in range(1, 4):
+            u = os.getenv(f"VERIFALIA_USER_{i}")
+            p = os.getenv(f"VERIFALIA_PASS_{i}")
+            if u and p:
+                accounts.append({"user": u, "pass": p})
+        if not accounts:
+            u = os.getenv("VERIFALIA_USER")
+            p = os.getenv("VERIFALIA_PASS", "")
+            if u:
+                accounts.append({"user": u, "pass": p})
 
-            full_name = emp.get("name", "")
-            email_candidates = EmailPermutationGenerator.generate(full_name, company_name)
-            logging.info(f"🔍 Checking {full_name} from {company_name}...")
+        if not accounts:
+            self.logger.error("❌ No Verifalia credentials found in environment variables.")
+            return
 
-            for candidate in email_candidates:
-                result = verifier.verify_email(candidate)
-                emp["verified_email"] = candidate
-                emp["email_verified"] = result["is_valid"]
-                emp["email_classification"] = result["classification"]
-                emp["confidence_score"] = result["confidence"]
+        verifier = VerifaliaVerifier(accounts, self.logger)
 
-                if result["is_valid"]:
-                    verified_count += 1
-                    found_valid = True
-                    verified_emp = emp
-                    company["verification_status"] = "verified"
-                    logging.info(f"✅ Valid email found for {full_name}: {candidate}")
-                    break
+        verified_count = 0
+        skipped_count = 0
 
+        for company in data:
+            company_name = company.get("company", "")
+            employees = company.get("employees", [])
+            if not employees:
+                continue
+
+            employees_sorted = sorted(employees, key=lambda e: e.get("confidence", 0), reverse=True)
+            found_valid = False
+            verified_emp = None
+
+            for emp in employees_sorted:
                 if verifier.out_of_credits:
                     company["verification_status"] = "skipped_out_of_credit"
                     skipped_count += 1
                     break
 
-                time.sleep(1.0)
+                full_name = emp.get("name", "")
+                email_candidates = EmailPermutationGenerator.generate(full_name, company_name)
+                self.logger.info(f"🔍 Checking {full_name} from {company_name}...")
 
-            if found_valid or verifier.out_of_credits:
-                break
+                for candidate in email_candidates:
+                    result = verifier.verify_email(candidate)
+                    emp["verified_email"] = candidate
+                    emp["email_verified"] = result["is_valid"]
+                    emp["email_classification"] = result["classification"]
+                    emp["confidence_score"] = result["confidence"]
 
-        if not found_valid:
-            verified_emp = employees_sorted[0]
-            verified_emp.update({
-                "verified_email": "",
-                "email_verified": False,
-                "email_classification": "Unknown",
-                "confidence_score": 0.0
-            })
-            company["verification_status"] = (
-                "skipped_out_of_credit" if verifier.out_of_credits else "unverified"
-            )
+                    if result["is_valid"]:
+                        verified_count += 1
+                        found_valid = True
+                        verified_emp = emp
+                        company["verification_status"] = "verified"
+                        self.logger.info(f"✅ Valid email found for {full_name}: {candidate}")
+                        break
 
-        # Keep only the final chosen employee
-        company["employees"] = [verified_emp]
+                    if verifier.out_of_credits:
+                        company["verification_status"] = "skipped_out_of_credit"
+                        skipped_count += 1
+                        break
 
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+                    time.sleep(1.0)
 
-    logging.info(f"✅ Email verification complete. Saved to {output_file}")
-    print(f"\n✅ Email verification complete. {verified_count} verified, {skipped_count} skipped (out of credits).")
-    print(f"Results saved to {output_file}")
+                if found_valid or verifier.out_of_credits:
+                    break
+
+            if not found_valid:
+                verified_emp = employees_sorted[0]
+                verified_emp.update({
+                    "verified_email": "",
+                    "email_verified": False,
+                    "email_classification": "Unknown",
+                    "confidence_score": 0.0
+                })
+                company["verification_status"] = (
+                    "skipped_out_of_credit" if verifier.out_of_credits else "unverified"
+                )
+
+            company["employees"] = [verified_emp]
+
+        with open(output_json, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        self.logger.info(f"✅ Email verification complete. Saved to {output_json}")
+        print(f"✅ Email verification complete. {verified_count} verified, {skipped_count} skipped.")
+        print(f"Results saved to {output_json}")
 
 
 # =====================
-# Entry Point
+# Runner / Entrypoint for both Orchestrator and Standalone use
 # =====================
+def main(user_folder: str | None = None):
+    """
+    Main entrypoint for ContactFinderAgent.
+    Supports both:
+      • Orchestrator import → main("users/user_demo")
+      • Standalone CLI → python agents/contact_finder.py user_demo
+    """
+    if user_folder:
+        user_path = Path(user_folder)
+    else:
+        env_user = os.getenv("USER_FOLDER")
+        user_path = Path(env_user) if env_user else None
+
+    agent = ContactFinderAgent(user_root=user_path)
+    agent.run()
+
+
 if __name__ == "__main__":
-    input_json = "outputs/employees_companies.json"
-    output_json = "outputs/employees_email.json"
+    import sys
+    user_arg = sys.argv[1] if len(sys.argv) >= 2 else None
+    if user_arg:
+        user_folder = str(Path("users") / user_arg)
+    else:
+        user_folder = None
 
-    print("🚀 Running contact finder with sequential Verifalia accounts...")
-    verify_emails_from_json(input_json, output_json)
+    main(user_folder)
+

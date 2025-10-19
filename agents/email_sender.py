@@ -1,10 +1,20 @@
 # agents/email_sender.py
+"""
+Agentic CRM - Multi-user Email Sender (Full Version)
+-----------------------------------------------------
+• Supports per-user directories: users/<user_id>/
+• Reads inputs/templates/recipients from that user's folder
+• Logs, processed_emails.json, and email_tracking.csv are per-user
+• Uses shared Gmail OAuth token (token.json) and credentials.json in root
+• Uses shared Gemini API key from .env in root
+• Maintains complete auto-reply, Gemini integration, and campaign logic
+"""
+
 import os
 import csv
 import json
 import time
 import base64
-import pickle
 import logging
 import re
 from datetime import datetime
@@ -28,114 +38,95 @@ from utils.generate_token import generate_token
 
 
 class CompleteEmailSystem:
-    def __init__(self, requirements_path: str = "inputs/customer_requirements.json"):
+    def __init__(self, user_root: str = None):
         self.SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
-        # Project root
+        # Resolve directories
         self.project_root = Path(__file__).resolve().parents[1]
+        self.user_root = Path(user_root) if user_root else self.project_root
+        self.inputs_dir = self.user_root / "inputs"
+        self.logs_dir = self.user_root / "logs"
+        self.templates_dir = self.user_root / "templates"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Setup centralized logging
+        # Setup per-user logging
         self.setup_logging()
 
-        # Load campaign config (customer_requirements.json)
-        self.config = self.load_requirements(requirements_path)
-
-        # Read communication settings & template path from config
+        # Load user configuration
+        req_path = self.inputs_dir / "customer_requirements.json"
+        self.config = self.load_requirements(req_path)
         self.comm = self.config.get("communication_settings", {})
         self.company = self.config.get("company_profile", {})
+
+        # Template path from requirements
         templates = self.config.get("templates", {})
         template_rel = templates.get("initial_email_html")
         if not template_rel:
-            self.logger.error("Template path not specified in customer_requirements.json > templates.initial_email_html")
-            raise FileNotFoundError("initial_email_html not specified in customer_requirements.json")
-
-        self.template_path = (self.project_root / template_rel).resolve()
+            raise FileNotFoundError("initial_email_html not found in customer_requirements.json")
+        self.template_path = (self.user_root / template_rel).resolve()
         if not self.template_path.exists():
-            self.logger.error(f"Template file not found: {self.template_path}")
             raise FileNotFoundError(f"Template file not found: {self.template_path}")
 
-        # Parse template and subject
+        # Read and parse template
         self.template_html = self.template_path.read_text(encoding="utf-8")
         self.subject = self._parse_subject_from_template(self.template_html) or f"Hello from {self.company.get('name', '')}".strip()
 
-        # Setup Gmail
+        # Gmail setup
         self.service = None
         self.authenticate()
 
-        # Load whitelisted recipients (for testing)
-        self.whitelisted_emails = self.load_whitelisted_emails()
+        # Recipients
+        self.recipients_csv = self.user_root / "recipients.csv"
+        self.whitelisted_emails = self.load_whitelisted_emails(self.recipients_csv)
 
-        # State: processed emails persisted across restarts
-        self.processed_file = self.project_root / "logs" / "processed_emails.json"
+        # Processed emails per user
+        self.processed_file = self.logs_dir / "processed_emails.json"
         self.processed_emails = self._load_processed_emails()
 
         # Gemini setup
-        load_dotenv()
+        load_dotenv(self.project_root / ".env")
         self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
         if not self.GEMINI_API_KEY:
-            self.logger.error("GEMINI_API_KEY not found in environment.")
-            raise ValueError("GEMINI_API_KEY not found in environment")
-
+            raise ValueError("GEMINI_API_KEY not found in .env")
         genai.configure(api_key=self.GEMINI_API_KEY)
         self.gemini_model = genai.GenerativeModel("gemini-2.5-flash")
-        self.logger.info("Gemini configured with model gemini-2.5-flash")
+        self.logger.info("Gemini configured (model: gemini-2.5-flash)")
 
-    # -----------------------
-    # Logging
-    # -----------------------
+    # ---------------- Logging ----------------
     def setup_logging(self):
-        logs_dir = (Path(__file__).resolve().parents[1] / "logs")
-        logs_dir.mkdir(exist_ok=True)
-        log_file = logs_dir / "email_sender.log"
-
+        log_file = self.logs_dir / "email_sender.log"
         handler = RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
         console = logging.StreamHandler()
-
         logging.basicConfig(
             level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] [PID:%(process)d] %(message)s",
+            format="%(asctime)s [%(levelname)s] %(message)s",
             handlers=[handler, console],
         )
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"Logging initialized — writing to {log_file}")
 
-    # -----------------------
-    # Config loading
-    # -----------------------
-    def load_requirements(self, path: str):
-        p = Path(path)
-        if not p.exists():
-            self.logger.error(f"customer_requirements.json not found at {p}")
-            raise FileNotFoundError("customer_requirements.json missing")
+    # ---------------- Load config ----------------
+    def load_requirements(self, path: Path):
+        if not path.exists():
+            raise FileNotFoundError(f"customer_requirements.json not found at {path}")
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            # keep existing keys intact (we don't reformat)
+            data = json.loads(path.read_text(encoding="utf-8"))
             self.logger.info("Loaded customer_requirements.json")
             return data
         except Exception as e:
             self.logger.error(f"Error reading requirements file: {e}")
             raise
 
-    # -----------------------
-    # Template utilities
-    # -----------------------
+    # ---------------- Template ----------------
     def _parse_subject_from_template(self, html_text: str):
-        """
-        Optional: allow subject to be declared at the top of template as:
-        <!-- SUBJECT: Your subject line here -->
-        """
         m = re.search(r"<!--\s*SUBJECT\s*:\s*(.*?)\s*-->", html_text, flags=re.IGNORECASE)
         if m:
             subject = m.group(1).strip()
-            self.logger.info(f"Subject parsed from template: {subject}")
+            self.logger.info(f"Subject parsed: {subject}")
             return subject
         return None
 
     def render_template(self, recipient_name: str, extra_ctx: dict = None):
-        """
-        Replace placeholders like {{name}}, {{company}}, {{sender_name}}, etc.
-        extra_ctx can supply additional variables if required.
-        """
         ctx = {
             "name": recipient_name,
             "company": self.company.get("name", ""),
@@ -147,15 +138,12 @@ class CompleteEmailSystem:
         }
         if extra_ctx:
             ctx.update(extra_ctx)
-
         rendered = self.template_html
         for k, v in ctx.items():
-            rendered = rendered.replace("{{" + k + "}}", str(v))
+            rendered = rendered.replace(f"{{{{{k}}}}}", str(v))
         return rendered
 
-    # -----------------------
-    # Gmail auth
-    # -----------------------
+    # ---------------- Gmail Auth ----------------
     def authenticate(self):
         creds = None
         token_path = Path("token.json")
@@ -164,49 +152,32 @@ class CompleteEmailSystem:
                 creds = Credentials.from_authorized_user_file(token_path, self.SCOPES)
             except Exception as e:
                 self.logger.warning(f"Error loading token.json: {e}")
-
         if not creds or not creds.valid:
-            self.logger.warning("Token invalid/missing. Running generate_token()...")
-            ok = generate_token()
-            if not ok:
-                raise RuntimeError("Failed to generate Gmail token.")
+            self.logger.warning("Token invalid/missing — regenerating")
+            if not generate_token():
+                raise RuntimeError("Failed to generate Gmail token")
             creds = Credentials.from_authorized_user_file(token_path, self.SCOPES)
-
         self.service = build("gmail", "v1", credentials=creds)
         self.logger.info("Gmail API authenticated")
 
-    # -----------------------
-    # Recipients (testing)
-    # -----------------------
-    def load_whitelisted_emails(self):
-        """
-        Load emails from recipients.csv for testing/demo only.
-        Assumes recipients.csv has 'name' and 'email' columns.
-        """
-        p = Path("recipients.csv")
-        if not p.exists():
-            self.logger.error("recipients.csv not found. Create it for testing recipients.")
-            raise FileNotFoundError("recipients.csv missing")
+    # ---------------- Recipients ----------------
+    def load_whitelisted_emails(self, path: Path):
+        if not path.exists():
+            raise FileNotFoundError(f"Recipients CSV not found: {path}")
         recipients = set()
-        with p.open("r", encoding="utf-8") as f:
+        with path.open("r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for r in reader:
                 email = r.get("email", "").strip().lower()
                 if email:
                     recipients.add(email)
-        self.logger.info(f"Loaded {len(recipients)} whitelisted/test recipients.")
+        self.logger.info(f"Loaded {len(recipients)} recipients from {path}")
         return recipients
 
-    # -----------------------
-    # Message creation & send
-    # -----------------------
+    # ---------------- Email creation ----------------
     def create_email_message(self, recipient: dict):
-        """
-        recipient: {'name': 'Foo', 'email': 'foo@example.com'}
-        """
         try:
             html_body = self.render_template(recipient['name'])
-            # Append dynamic signature based on comm config (keeps signature out of template)
             signature_html = (
                 f"<br><strong>Best regards,</strong><br>"
                 f"{self.comm.get('sender_name','')}<br>"
@@ -215,16 +186,14 @@ class CompleteEmailSystem:
                 f"{self.comm.get('sender_phone','')}"
             )
             final_html = f"<div style='font-family:Arial,sans-serif;font-size:11pt;line-height:1.5'>{html_body}{signature_html}</div>"
-
             msg = MIMEMultipart("alternative")
             msg["From"] = self.comm.get("sender_email")
             msg["To"] = recipient["email"]
             msg["Subject"] = self.subject
-            # Include X-Mailer or other helpful headers if desired
             msg.attach(MIMEText(final_html, "html"))
             return msg
         except Exception as e:
-            self.logger.error(f"Error creating email message for {recipient.get('email')}: {e}")
+            self.logger.error(f"Error creating email for {recipient.get('email')}: {e}")
             return None
 
     def send_email(self, recipient: dict, max_retries=3):
@@ -233,59 +202,43 @@ class CompleteEmailSystem:
             return False
         raw = base64.urlsafe_b64encode(msg_obj.as_bytes()).decode("utf-8")
         body = {"raw": raw}
-        attempt = 0
         backoff = 5
-        while attempt < max_retries:
+        for attempt in range(max_retries):
             try:
                 res = self.service.users().messages().send(userId="me", body=body).execute()
-                self._track_email(recipient, kind="campaign", message_id=res.get("id"))
+                self._track_email(recipient, "campaign", res.get("id"))
                 self.logger.info(f"Sent email to {recipient['email']} (ID: {res.get('id')})")
                 return True
             except HttpError as e:
                 status = getattr(e.resp, "status", None)
-                self.logger.warning(f"Gmail HttpError status={status} attempt={attempt+1}/{max_retries}: {e}")
                 if status in (429, 503):
+                    self.logger.warning(f"Gmail rate limit ({status}) — retrying in {backoff}s")
                     time.sleep(backoff)
                     backoff *= 2
-                    attempt += 1
                     continue
                 else:
+                    self.logger.error(f"Gmail API error: {e}")
                     break
             except Exception as e:
-                self.logger.error(f"Unexpected error sending email to {recipient['email']}: {e}")
+                self.logger.error(f"Unexpected error: {e}")
                 break
-        self.logger.error(f"Failed to send email to {recipient['email']} after {max_retries} attempts")
         return False
 
-    # -----------------------
-    # Tracking
-    # -----------------------
-    def _track_email(self, recipient: dict, kind: str = "campaign", thread_id: str = "", message_id: str = ""):
-        try:
-            logs_dir = self.project_root / "logs"
-            logs_dir.mkdir(exist_ok=True)
-            tracking_file = logs_dir / "email_tracking.csv"
-            exists = tracking_file.exists()
-            now = datetime.now()
-            with tracking_file.open("a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                if not exists:
-                    writer.writerow(["name", "email", "date", "time", "kind", "thread_id", "message_id"])
-                writer.writerow([
-                    recipient.get("name", ""),
-                    recipient.get("email", ""),
-                    now.strftime("%Y-%m-%d"),
-                    now.strftime("%H:%M:%S"),
-                    kind,
-                    thread_id or "",
-                    message_id or ""
-                ])
-        except Exception as e:
-            self.logger.error(f"Error tracking email: {e}")
+    # ---------------- Tracking ----------------
+    def _track_email(self, recipient, kind="campaign", message_id=""):
+        tracking_file = self.logs_dir / "email_tracking.csv"
+        exists = tracking_file.exists()
+        now = datetime.now()
+        with tracking_file.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not exists:
+                writer.writerow(["name", "email", "date", "time", "kind", "message_id"])
+            writer.writerow([
+                recipient.get("name", ""), recipient.get("email", ""),
+                now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S"), kind, message_id
+            ])
 
-    # -----------------------
-    # Auto-reply: fetch / detect / details
-    # -----------------------
+    # ---------------- Auto Reply Logic ----------------
     def get_unread_emails(self):
         try:
             res = self.service.users().messages().list(userId="me", q="is:unread").execute()
@@ -308,7 +261,6 @@ class CompleteEmailSystem:
                 elif name == "message-id":
                     details["message_id"] = h.get("value")
             details["thread_id"] = m.get("threadId")
-            # extract body (prefer text/plain, else try html)
             details["body"] = self._extract_body(m)
             details["id"] = message_id
             return details
@@ -318,40 +270,23 @@ class CompleteEmailSystem:
 
     def _extract_body(self, message):
         payload = message.get("payload", {})
-        # recursive helper
-        def walk_parts(parts):
+        def walk(parts):
             for p in parts:
                 mime = p.get("mimeType", "")
-                if mime == "text/plain":
-                    data = p.get("body", {}).get("data")
-                    if data:
-                        return base64.urlsafe_b64decode(data).decode("utf-8")
-                if mime == "text/html":
-                    data = p.get("body", {}).get("data")
-                    if data:
-                        # prefer html if plain not available
-                        return base64.urlsafe_b64decode(data).decode("utf-8")
-                # nested parts
+                data = p.get("body", {}).get("data")
+                if mime in ("text/plain", "text/html") and data:
+                    return base64.urlsafe_b64decode(data).decode("utf-8")
                 if p.get("parts"):
-                    res = walk_parts(p.get("parts"))
+                    res = walk(p["parts"])
                     if res:
                         return res
-            return None
-
+            return ""
         if "parts" in payload:
-            result = walk_parts(payload["parts"])
-            if result:
-                return result
-        # fallback
-        body = payload.get("body", {}).get("data")
-        if body:
-            return base64.urlsafe_b64decode(body).decode("utf-8")
-        return ""
+            return walk(payload["parts"])
+        data = payload.get("body", {}).get("data")
+        return base64.urlsafe_b64decode(data).decode("utf-8") if data else ""
 
-    # -----------------------
-    # Classification & reply generation
-    # -----------------------
-    def classify_email(self, content: str, sender: str):
+    def classify_email(self, content, sender):
         auto_indicators = ["out of office", "auto-reply", "automatic reply", "vacation", "noreply", "no-reply"]
         lower = (content or "").lower()
         for i in auto_indicators:
@@ -359,115 +294,85 @@ class CompleteEmailSystem:
                 return "auto_reply"
         return "reply_needed"
 
-    def _gemini_generate_with_backoff(self, prompt: str, retries: int = 3, initial_backoff: int = 5):
+    def _gemini_generate_with_backoff(self, prompt, retries=3, initial_backoff=5):
         for attempt in range(retries):
             try:
-                response = self.gemini_model.generate_content(prompt, request_options={"timeout": 60})
-                if response and getattr(response, "text", None):
-                    return response.text.strip()
-                raise ValueError("Empty response from Gemini")
+                res = self.gemini_model.generate_content(prompt, request_options={"timeout": 60})
+                if res and getattr(res, "text", None):
+                    return res.text.strip()
+                raise ValueError("Empty Gemini response")
             except Exception as e:
                 err = str(e).lower()
-                # retry on rate-limit / quota-ish messages
-                if "429" in err or "quota" in err or "rate-limit" in err or "quota" in err:
-                    backoff = initial_backoff * (2 ** attempt)
-                    self.logger.warning(f"Gemini rate-limit detected (attempt {attempt+1}/{retries}), backing off {backoff}s")
-                    time.sleep(backoff)
+                if "429" in err or "quota" in err:
+                    delay = initial_backoff * (2 ** attempt)
+                    self.logger.warning(f"Gemini rate-limit — retrying in {delay}s")
+                    time.sleep(delay)
                     continue
-                self.logger.warning(f"Gemini non-retryable error: {e}")
+                self.logger.error(f"Gemini error: {e}")
                 break
         return None
 
-    def generate_reply(self, email_data: dict):
-        """
-        Ask Gemini to create an HTML reply. If Gemini fails, create a fallback reply using sender/company info.
-        """
+    def generate_reply(self, email_data):
         sender = email_data.get("from", "Contact")
         subject = email_data.get("subject", "")
         body = email_data.get("body", "")
-
-        # Build a prompt that instructs HTML output and includes company context
         prompt = (
             f"You are {self.comm.get('sender_name')} ({self.comm.get('sender_designation')}) at {self.company.get('name')}.\n"
-            "You previously sent an outreach email. The contact replied; here is their message:\n\n"
-            f"From: {sender}\nSubject: {subject}\n\n{body}\n\n"
-            "Generate a concise, professional HTML reply (use <p> for paragraphs). Keep it 2-4 short paragraphs and include a brief signature "
-            f"with name, designation and contact email ({self.comm.get('sender_email')}). Do not include subject line or headers — only the HTML body."
+            f"The contact replied:\nFrom: {sender}\nSubject: {subject}\n\n{body}\n\n"
+            f"Write a professional, concise HTML reply (2–4 short paragraphs)."
         )
-
         generated = self._gemini_generate_with_backoff(prompt)
         if generated:
             return generated
-
-        # fallback: dynamically generate a polite reply
-        fallback = (
+        return (
             f"<p>Thank you for your response.</p>"
-            f"<p>I appreciate you taking the time to reply — I'll review your message and follow up with more details shortly.</p>"
+            f"<p>I appreciate your reply — I’ll review and follow up shortly.</p>"
             f"<p>Best regards,<br>{self.comm.get('sender_name')}<br>{self.comm.get('sender_designation')} | {self.company.get('name')}<br>"
             f"<a href='mailto:{self.comm.get('sender_email')}'>{self.comm.get('sender_email')}</a></p>"
         )
-        return fallback
 
-    # -----------------------
-    # Send reply & marking
-    # -----------------------
-    def send_reply(self, original_email: dict, reply_html: str):
+    def send_reply(self, original_email, reply_html):
         try:
             msg = MIMEMultipart("alternative")
             msg["To"] = original_email.get("from")
-            # Compose subject as Re: original subject
             base_subject = original_email.get("subject", "")
             msg["Subject"] = f"Re: {base_subject}" if base_subject else f"Re: {self.company.get('name')}"
-            # Include in-reply-to header if present
             if original_email.get("message_id"):
-                msg["In-Reply-To"] = original_email.get("message_id")
-                msg["References"] = original_email.get("message_id")
-
+                msg["In-Reply-To"] = original_email["message_id"]
+                msg["References"] = original_email["message_id"]
             msg.attach(MIMEText(reply_html, "html"))
             raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
             body = {"raw": raw, "threadId": original_email.get("thread_id")}
             sent = self.service.users().messages().send(userId="me", body=body).execute()
-            # track reply
-            self._track_email({
-                "name": original_email.get("from"),
-                "email": original_email.get("from")
-            }, kind="reply", thread_id=original_email.get("thread_id"), message_id=sent.get("id"))
-            self.logger.info(f"Reply sent to {original_email.get('from')} (ID: {sent.get('id')})")
+            self._track_email({"name": original_email.get("from"), "email": original_email.get("from")},
+                              kind="reply", message_id=sent.get("id"))
+            self.logger.info(f"Reply sent to {original_email.get('from')}")
             return True
         except Exception as e:
             self.logger.error(f"Error sending reply: {e}")
             return False
 
-    def mark_as_read(self, message_id: str):
+    def mark_as_read(self, msg_id):
         try:
-            self.service.users().messages().modify(userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}).execute()
+            self.service.users().messages().modify(userId="me", id=msg_id, body={"removeLabelIds": ["UNREAD"]}).execute()
         except Exception as e:
-            self.logger.error(f"Error marking message {message_id} as read: {e}")
+            self.logger.error(f"Error marking as read: {e}")
 
-    # -----------------------
-    # Processed emails persistence
-    # -----------------------
+    # ---------------- Persistence ----------------
     def _load_processed_emails(self):
-        try:
-            if self.processed_file.exists():
-                data = json.loads(self.processed_file.read_text(encoding="utf-8"))
-                return set(data)
-        except Exception as e:
-            self.logger.warning(f"Could not load processed_emails: {e}")
+        if self.processed_file.exists():
+            try:
+                return set(json.loads(self.processed_file.read_text(encoding="utf-8")))
+            except Exception:
+                return set()
         return set()
 
     def _save_processed_emails(self):
-        try:
-            self.processed_file.parent.mkdir(parents=True, exist_ok=True)
-            self.processed_file.write_text(json.dumps(list(self.processed_emails)), encoding="utf-8")
-        except Exception as e:
-            self.logger.error(f"Failed to save processed_emails: {e}")
+        self.processed_file.write_text(json.dumps(list(self.processed_emails)), encoding="utf-8")
 
-    # -----------------------
-    # Main auto-reply loop
-    # -----------------------
-    def run_auto_reply_monitoring(self, check_interval: int = 180):
-        self.logger.info("Starting auto-reply monitoring loop...")
+    # ---------------- Auto-Reply Loop ----------------
+    def run_auto_reply_monitoring(self, check_interval=180):
+        self.logger.info("Starting auto-reply monitoring...")
         try:
             while True:
                 messages = self.get_unread_emails()
@@ -487,21 +392,13 @@ class CompleteEmailSystem:
                         self.processed_emails.add(msg_id)
                         self._save_processed_emails()
                         continue
-
                     classification = self.classify_email(details.get("body", ""), sender)
                     if classification == "reply_needed":
                         reply_html = self.generate_reply(details)
-                        sent_ok = self.send_reply(details, reply_html)
-                        if sent_ok:
-                            self.logger.info("Reply sent; marking as read.")
-                    else:
-                        self.logger.info(f"No reply needed ({classification})")
-                    # mark processed & persist
+                        self.send_reply(details, reply_html)
                     self.mark_as_read(msg_id)
                     self.processed_emails.add(msg_id)
                     self._save_processed_emails()
-
-                self.logger.info(f"Sleeping {check_interval} seconds before next poll...")
                 time.sleep(check_interval)
         except KeyboardInterrupt:
             self.logger.info("Auto-reply monitoring stopped by user.")
@@ -517,65 +414,61 @@ class CompleteEmailSystem:
             email = sender_header.strip().lower()
         return email in self.whitelisted_emails
 
-    # -----------------------
-    # Main campaign runner
-    # -----------------------
-    def send_bulk_emails(self, csv_file: str, rate_limit_delay: int = 2):
-        # load recipients (name,email)
+    # ---------------- Bulk Campaign ----------------
+    def send_bulk_emails(self, rate_limit_delay=2):
         recipients = []
-        p = Path(csv_file)
-        if not p.exists():
-            self.logger.error(f"Recipients CSV not found: {csv_file}")
-            return False
-        with p.open("r", encoding="utf-8") as f:
+        with self.recipients_csv.open("r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for r in reader:
                 name = r.get("name", "").strip()
                 email = r.get("email", "").strip().lower()
                 if name and email:
                     recipients.append({"name": name, "email": email})
-
-        if not recipients:
-            self.logger.error("No valid recipients found in CSV.")
-            return False
-
         sent = failed = 0
-        self.logger.info(f"Sending {len(recipients)} emails (delay {rate_limit_delay}s)")
         for i, rc in enumerate(recipients, 1):
-            self.logger.info(f"[{i}/{len(recipients)}] -> {rc['email']}")
             ok = self.send_email(rc)
-            if ok:
-                sent += 1
-            else:
-                failed += 1
+            sent += ok
+            failed += not ok
             if i < len(recipients):
                 time.sleep(rate_limit_delay)
-
-        self.logger.info(f"Completed campaign. Sent: {sent}, Failed: {failed}")
+        self.logger.info(f"Campaign done — Sent: {sent}, Failed: {failed}")
         return sent > 0
 
-    # -----------------------
-    # Run combined system
-    # -----------------------
+    # ---------------- Combined Runner ----------------
     def run_complete_system(self):
-        self.logger.info("Starting complete email system")
-        ok = self.send_bulk_emails("recipients.csv", rate_limit_delay=2)
-        if not ok:
-            self.logger.error("Campaign failed; aborting auto-reply monitoring.")
-            return
-        self.run_auto_reply_monitoring()
+        self.logger.info(f"Running email system for user: {self.user_root.name}")
+        ok = self.send_bulk_emails(rate_limit_delay=2)
+        if ok:
+            self.run_auto_reply_monitoring()
+        else:
+            self.logger.error("Campaign failed; skipping auto-reply monitoring.")
 
-# -----------------------
-# Entrypoint
-# -----------------------
-def main():
-    try:
-        system = CompleteEmailSystem()
-        system.run_complete_system()
-    except KeyboardInterrupt:
-        print("Stopped by user.")
-    except Exception as e:
-        print(f"Fatal error: {e}")
+
+# ---------------- Entrypoint ----------------
+def main(user_folder: str | None = None):
+    """
+    Main entrypoint for CompleteEmailSystem.
+    Supports both:
+      • Orchestrator import → main("users/user_demo")
+      • Standalone CLI → python agents/email_sender.py user_demo
+    """
+    if user_folder:
+        user_path = Path(user_folder)
+    else:
+        env_user = os.getenv("USER_FOLDER")
+        user_path = Path(env_user) if env_user else Path("users/user_demo")
+
+    system = CompleteEmailSystem(user_root=user_path)
+    system.run_complete_system()
+
 
 if __name__ == "__main__":
-    main()
+    import sys
+    user_arg = sys.argv[1] if len(sys.argv) >= 2 else None
+    if user_arg:
+        user_folder = str(Path("users") / user_arg)
+    else:
+        user_folder = None
+
+    main(user_folder)
+

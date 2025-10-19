@@ -2,40 +2,19 @@
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
-import json, re, os, time, ast, threading, logging, queue, random
+import json
+import re
+import os
+import time
+import ast
+import logging
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from dotenv import load_dotenv
 
 # -----------------------------
-# Setup Logging
-# -----------------------------
-os.makedirs("logs", exist_ok=True)
-logging.basicConfig(
-    filename="logs/enrichment_agent.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
-# -----------------------------
-# Ollama / Mistral Setup
-# -----------------------------
-USE_OLLAMA = True
-OLLAMA_MODEL = "mistral:latest"
-
-if USE_OLLAMA:
-    try:
-        from ollama import chat
-        ollama_client = True
-        logging.info("Ollama Mistral client ready")
-    except Exception as e:
-        ollama_client = False
-        logging.warning(f"Ollama setup failed: {e}")
-else:
-    ollama_client = False
-    logging.info("USE_OLLAMA=False. No LLM will be used")
-
-# -----------------------------
-# Configuration
+# Configuration (unchanged behaviour)
 # -----------------------------
 MAX_WORKERS = 5
 HTTP_TIMEOUT = 10
@@ -73,7 +52,7 @@ def clean_company_record(company):
     company["description"] = normalize_text(company.get("description"))
 
     # Handle structured_info fields
-    s = company.get("structured_info", {})
+    s = company.get("structured_info", {}) or {}
     cleaned = {
         "company_name": normalize_text(s.get("company_name")),
         "founded_year": normalize_text(s.get("founded_year")),
@@ -98,21 +77,87 @@ def clean_company_record(company):
 # Enrichment Agent
 # -----------------------------
 class EnrichmentAgent:
-    def __init__(self, model=OLLAMA_MODEL):
+    def __init__(self, user_root: str = None, model: str = "mistral:latest", max_workers: int = MAX_WORKERS):
+        """
+        user_root: Path to the user's folder (e.g. users/user_demo). If None, falls back to repo root.
+        model: Ollama/Mistral model string (keeps existing behavior).
+        """
+        # define project root and user_root
+        self.project_root = Path(__file__).resolve().parents[1]
+        if user_root:
+            self.user_root = Path(user_root)
+        else:
+            # fallback: use project root for older single-tenant behavior
+            self.user_root = self.project_root
+
+        # define per-user directories
+        self.inputs_dir = (self.user_root / "inputs")
+        self.outputs_dir = (self.user_root / "outputs")
+        self.logs_dir = (self.user_root / "logs")
+        # ensure directories exist
+        for d in (self.inputs_dir, self.outputs_dir, self.logs_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+        # logging per-user
+        self.log_file = self.logs_dir / "enrichment_agent.log"
+        self._setup_logging()
+
+        # model and concurrency
         self.model = model
+        self.MAX_WORKERS = max_workers
+
+        # city regex (same as before)
         self.city_regex = re.compile(
             r"\b(New Delhi|Delhi|Gurugram|Bangalore|Mumbai|Pune|Hyderabad|Chennai|Kolkata|Noida|"
             r"Ahmedabad|Jaipur|Lucknow|Singapore|London|San Francisco|New York|Toronto|Sydney|Dubai|Paris|Berlin|Tokyo|Seoul)\b",
             re.I
         )
 
+        # Ollama / Mistral setup from original script
+        load_dotenv()
+        self.USE_OLLAMA = True
+        self.OLLAMA_MODEL = model
+        if self.USE_OLLAMA:
+            try:
+                from ollama import chat  # local import; may fail if not installed
+                self.ollama_client = True
+                logging.info("Ollama Mistral client ready")
+            except Exception as e:
+                self.ollama_client = False
+                logging.warning(f"Ollama setup failed: {e}")
+        else:
+            self.ollama_client = False
+            logging.info("USE_OLLAMA=False. No LLM will be used")
+
+    def _setup_logging(self):
+        # configure logging to write to the per-user log file
+        # keep simple basicConfig to avoid interfering with other modules
+        logging.getLogger().handlers = []  # clear existing handlers to avoid duplicates
+        logging.basicConfig(
+            filename=str(self.log_file),
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s"
+        )
+        # also log to console for interactive debugging
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        console.setFormatter(formatter)
+        logging.getLogger().addHandler(console)
+        logging.info(f"EnrichmentAgent logging initialized. Logs -> {self.log_file}")
+
+    # -----------------------------
+    # LLM / Ollama helper (unchanged)
+    # -----------------------------
     def safe_mistral_generate(self, prompt, max_tokens=1024):
-        if not ollama_client:
+        if not getattr(self, "ollama_client", False):
             return prompt[:500]
         for attempt in range(MAX_RETRIES):
             try:
+                # local import to avoid module-level crash if ollama not installed
+                from ollama import chat
                 response = chat(
-                    model=self.model,
+                    model=self.OLLAMA_MODEL,
                     messages=[{"role": "user", "content": prompt}],
                     options={"temperature": 0, "top_p": 1}
                 )
@@ -124,6 +169,9 @@ class EnrichmentAgent:
                 time.sleep(SLEEP_BASE * (2 ** attempt))
         return ""
 
+    # -----------------------------
+    # Network request helper (unchanged)
+    # -----------------------------
     def safe_request(self, url):
         for attempt in range(MAX_RETRIES):
             try:
@@ -174,6 +222,9 @@ class EnrichmentAgent:
             logging.warning(f"[DDGS] query failed: {query[:40]}... ({e})")
             return []
 
+    # -----------------------------
+    # Heuristics (unchanged)
+    # -----------------------------
     def detect_hiring(self, company_name, website):
         try:
             r = self.safe_request(website)
@@ -216,6 +267,9 @@ class EnrichmentAgent:
                     for ex in ["linkedin", "glassdoor", "indeed", "facebook", "twitter", "crunchbase", "youtube"])]
         return " ".join(filtered)[:2500]
 
+    # -----------------------------
+    # JSON parsing helper (unchanged)
+    # -----------------------------
     def _robust_parse_json(self, raw_text):
         if not raw_text:
             raise ValueError("No raw_text provided")
@@ -274,39 +328,90 @@ class EnrichmentAgent:
             "snippets": snippets
         }
 
-# -----------------------------
-# Runner
-# -----------------------------
-if __name__ == "__main__":
-    agent = EnrichmentAgent()
-    with open("inputs/companies.json", "r", encoding="utf-8") as f:
-        companies = json.load(f)
+    # -----------------------------
+    # High-level run method (keeps original behaviour)
+    # -----------------------------
+    def run(self):
+        """
+        Run the full enrichment pipeline using inputs/enrichment list from the user's inputs directory.
+        Writes results to user's outputs directory and logs to the user's logs directory.
+        """
+        inputs_file = self.inputs_dir / "companies.json"
+        if not inputs_file.exists():
+            logging.error(f"Inputs file not found: {inputs_file}")
+            return
 
-    raw_results = []
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(agent.enrich_lead_prefetch, c["name"], c["website"]): c for c in companies}
-        for future in as_completed(futures):
-            c = futures[future]
-            try:
-                result = future.result()
-                raw_results.append(result)
-                logging.info(f"✅ Prefetched: {c['name']}")
-            except Exception as e:
-                logging.error(f"❌ Prefetch failed for {c['name']}: {e}")
-
-    final_results = []
-    for r in sorted(raw_results, key=lambda x: x["company"]):
         try:
-            info = agent.extract_structured_info(r["company"], r["description"], r["snippets"])
-            r["structured_info"] = info
-            del r["snippets"]
-            final_results.append(clean_company_record(r))  # <-- safe cleaning step
-            logging.info(f"✅ LLM enriched & cleaned: {r['company']}")
+            with inputs_file.open("r", encoding="utf-8") as f:
+                companies = json.load(f)
         except Exception as e:
-            logging.error(f"❌ LLM enrich failed for {r['company']}: {e}")
+            logging.error(f"Failed to load companies from {inputs_file}: {e}")
+            return
 
-    os.makedirs("outputs", exist_ok=True)
-    with open("outputs/enriched_companies.json", "w", encoding="utf-8") as f:
-        json.dump(final_results, f, indent=2, ensure_ascii=False)
+        raw_results = []
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            futures = {executor.submit(self.enrich_lead_prefetch, c.get("name"), c.get("website")): c for c in companies}
+            for future in as_completed(futures):
+                c = futures[future]
+                try:
+                    result = future.result()
+                    raw_results.append(result)
+                    logging.info(f"✅ Prefetched: {c.get('name')}")
+                except Exception as e:
+                    logging.error(f"❌ Prefetch failed for {c.get('name')}: {e}")
 
-    print(f"✅ Done. Cleaned and saved {len(final_results)} companies.")
+        final_results = []
+        for r in sorted(raw_results, key=lambda x: x.get("company", "")):
+            try:
+                info = self.extract_structured_info(r.get("company"), r.get("description"), r.get("snippets"))
+                r["structured_info"] = info
+                r.pop("snippets", None)
+                final_results.append(clean_company_record(r))  # <-- safe cleaning step
+                logging.info(f"✅ LLM enriched & cleaned: {r.get('company')}")
+            except Exception as e:
+                logging.error(f"❌ LLM enrich failed for {r.get('company')}: {e}")
+
+        # write outputs to user's outputs dir
+        out_file = self.outputs_dir / "enriched_companies.json"
+        try:
+            with out_file.open("w", encoding="utf-8") as f:
+                json.dump(final_results, f, indent=2, ensure_ascii=False)
+            logging.info(f"✅ Done. Cleaned and saved {len(final_results)} companies to {out_file}")
+        except Exception as e:
+            logging.error(f"Failed to write output to {out_file}: {e}")
+
+# -----------------------------
+# Runner / Entrypoint for both Orchestrator and Standalone use
+# -----------------------------
+def main(user_folder: str | None = None):
+    """
+    Main entrypoint for enrichment_agent.
+    Used both by:
+      • The orchestrator (via import + main())
+      • Standalone command line runs
+    """
+    # Determine user path
+    if user_folder:
+        user_path = Path(user_folder)
+    else:
+        # if called standalone and no env variable provided
+        env_user = os.getenv("USER_FOLDER")
+        user_path = Path(env_user) if env_user else None
+
+    # Initialize and run
+    agent = EnrichmentAgent(user_root=user_path)
+    agent.run()
+
+
+if __name__ == "__main__":
+    import sys
+    # Allow standalone run: python agents/enrichment_agent.py [user_name]
+    user_arg = sys.argv[1] if len(sys.argv) >= 2 else None
+    if user_arg:
+        # Build full path like users/<user_arg>
+        user_folder = str(Path("users") / user_arg)
+    else:
+        user_folder = None
+
+    main(user_folder)
+
