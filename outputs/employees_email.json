@@ -1,107 +1,74 @@
 [
   {
-    "company": "Chaayos",
+    "company": "PhonePe",
+    "num_found": 3,
     "employees": [
       {
-        "name": "Swati singh",
-        "title": "Sales",
-        "linkedin_url": "https://in.linkedin.com/in/swati-singh-7862a8a0",
-        "email": "s.singh@chaayos.com",
-        "verified_email": "",
-        "email_verified": false,
-        "email_classification": "Unknown",
-        "confidence_score": 0.0
-      },
-      {
-        "name": "Gautam Begwani",
-        "title": "Business Head (P&L Lead)- B2B Sales | LinkedIn",
-        "linkedin_url": "https://in.linkedin.com/in/gautam-begwani-83a861119",
-        "email": "g.begwani@chaayos.com",
-        "verified_email": "",
-        "email_verified": false,
-        "email_classification": "Unknown",
-        "confidence_score": 0.0
-      },
-      {
-        "name": "Chirag Garg",
-        "title": "Territory Manager Sales -TVS Motor Company | LinkedIn",
-        "linkedin_url": "https://in.linkedin.com/in/chiraggarg1999",
-        "email": "c.garg@chaayos.com",
+        "name": "Vipul Manglik",
+        "title": "National Sales Head at PhonePe ex Airtel LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/vipul-manglik-2377a032",
+        "email_guess": "vipul.manglik@phonepe.com",
+        "confidence": 0.7,
         "verified_email": "",
         "email_verified": false,
         "email_classification": "Unknown",
         "confidence_score": 0.0
       }
-    ]
+    ],
+    "verification_status": "skipped_out_of_credit"
   },
   {
-    "company": "UrbanClap",
+    "company": "CRED",
+    "num_found": 3,
     "employees": [
       {
-        "name": "Sanjana Nanda",
-        "title": "Business Development Manager - UrbanClap",
-        "linkedin_url": "https://in.linkedin.com/in/sanjana-nanda-35237412b",
-        "email": "s.nanda@urbanclap.com",
-        "verified_email": "",
-        "email_verified": false,
-        "email_classification": "Unknown",
-        "confidence_score": 0.0
-      },
-      {
-        "name": "Apoorv lunkad",
-        "title": "Sales",
-        "linkedin_url": "https://www.linkedin.com/in/apoorvlunkad",
-        "email": "a.lunkad@urbanclap.com",
-        "verified_email": "",
-        "email_verified": false,
-        "email_classification": "Unknown",
-        "confidence_score": 0.0
-      },
-      {
-        "name": "Ujwal Singh",
-        "title": "Business Development Executive at UrbanClap ...",
-        "linkedin_url": "https://in.linkedin.com/in/ujwal-singh-b0836b215",
-        "email": "u.singh@urbanclap.com",
+        "name": "Milan Gandhi",
+        "title": "Campaign & Operations at CRED  Sales at ... Ishita Chhabra Strategic Growth and Partnerships at CRED ... Vaitheeswaran S CRED LinkedIn Maria Santhosh Talent Partner @ CRED LinkedIn India Swamy Seetharaman CRED LinkedIn Ganesh Subramanian CRED LinkedIn Vinayak N building lending at CRED LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/milan-gandhi-455b5744",
+        "email_guess": "milan.gandhi@cred.com",
+        "confidence": 0.7,
         "verified_email": "",
         "email_verified": false,
         "email_classification": "Unknown",
         "confidence_score": 0.0
       }
-    ]
+    ],
+    "verification_status": "skipped_out_of_credit"
   },
   {
-    "company": "Swiggy",
+    "company": "Razorpay",
+    "num_found": 3,
     "employees": [
       {
-        "name": "Rishikesh Shah",
-        "title": "\" Sales Manager at Swiggy | Turnkey...\" | LinkedIn",
-        "linkedin_url": "https://in.linkedin.com/in/rishikeshshah0",
-        "email": "r.shah@swiggy.com",
-        "verified_email": "",
-        "email_verified": false,
-        "email_classification": "Unknown",
-        "confidence_score": 0.0
-      },
-      {
-        "name": "DEBAPRIYA DAS",
-        "title": "Sales",
-        "linkedin_url": "https://in.linkedin.com/in/debapriyadas-gbs",
-        "email": "d.das@swiggy.com",
-        "verified_email": "",
-        "email_verified": false,
-        "email_classification": "Unknown",
-        "confidence_score": 0.0
-      },
-      {
-        "name": "Rana Bayas",
-        "title": "Senior Area Sales Manager at Swiggy | LinkedIn",
-        "linkedin_url": "https://in.linkedin.com/in/rana-bayas-25212690",
-        "email": "r.bayas@swiggy.com",
+        "name": "Ashish",
+        "title": "Director PrePaid (PPI ... LinkedIn India Rahul Kothari COO at Razorpay LinkedIn Sandeep Mallik Product,Sales and Business ... LinkedIn India Palak Bharti Product Solutions & GTM Strategist Sales ... Harsh Singh Senior Manager Strategic Accounts at Razorpay ... Bijesh Nair LinkedIn India We've moved to our new office Razorpay Culture RAZORPAY SOFTWARE PRIVATE LIMITED ZaubaCorp Rahul Kothari COO at Razorpay LinkedIn Associate Director at Razorpay LinkedIn India Razorpay Vendor Payments Multilayered approval workflow",
+        "linkedin_url": "https://in.linkedin.com/in/ashish-b-b54484101",
+        "email_guess": "ashish@razorpay.com",
+        "confidence": 0.7,
         "verified_email": "",
         "email_verified": false,
         "email_classification": "Unknown",
         "confidence_score": 0.0
       }
-    ]
+    ],
+    "verification_status": "skipped_out_of_credit"
+  },
+  {
+    "company": "Paytm",
+    "num_found": 3,
+    "employees": [
+      {
+        "name": "Anand Shankar",
+        "title": "Ad Sales at Paytm Co Founder LinkedIn India Arun Saini Sales Manager at Paytm LinkedIn Amit Kumar Pandey Sr. Deputy Manager LinkedIn India Rovin Jain Deputy General Manager at PAYTM Leading Sales ... Huzaifa A Laljiwala AVP at Paytm LinkedIn India Abhinav G Praveen Sales Officer @ Paytm India LinkedIn Suraj singh Chouhan Sales at Paytm LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/anandshankar4",
+        "email_guess": "anand.shankar@paytm.com",
+        "confidence": 0.7,
+        "verified_email": "",
+        "email_verified": false,
+        "email_classification": "Unknown",
+        "confidence_score": 0.0
+      }
+    ],
+    "verification_status": "skipped_out_of_credit"
   }
 ]

@@ -1,10 +1,56 @@
 {
-  "industry": ["Food & Beverage", "Technology"],
-  "preferred_keywords": ["tea", "snack", "cafe"],
-  "headquarters": ["New Delhi", "Gurugram", "Bengaluru"],
-  "min_funding_signal": 0.3,
-  "max_negative_signal": 0.4,
+  "industry": [
+    "Financial Technology",
+    "Banking",
+    "Payments",
+    "Lending",
+    "Data Analytics",
+    "Artificial Intelligence",
+    "Business Intelligence"
+  ],
+
+  "preferred_keywords": [
+    "fintech",
+    "payment",
+    "credit",
+    "loan",
+    "analytics",
+    "ai",
+    "data",
+    "intelligence",
+    "risk modeling",
+    "fraud detection",
+    "forecasting"
+  ],
+
+  "headquarters": [
+    "Bengaluru",
+    "Mumbai",
+    "Gurugram",
+    "Pune"
+  ],
+
+  "min_funding_signal": 0.4,
+  "max_negative_signal": 0.5,
   "hiring_required": true,
   "founded_after": 2010,
-  "employee_range": [50, 500]
+  "employee_range": [100, 10000],
+  "employee_search_top_percent": 0.2,
+
+  "company_profile": {
+    "name": "FinSight Analytics",
+    "description": "FinSight Analytics helps banks, NBFCs, and FinTechs leverage AI-powered data intelligence to improve risk modeling, fraud detection, and lending decisions.",
+    "website": "https://finsightanalytics.com"
+  },
+
+  "communication_settings": {
+    "sender_name": "Neha Kapoor",
+    "sender_designation": "Business Development Manager",
+    "sender_email": "neha.kapoor@finsightanalytics.com",
+    "sender_phone": "+91 98765 43210"
+  },
+
+  "templates": {
+    "initial_email_html": "templates/finsight_intro.html"
+  }
 }

@@ -1,657 +1,581 @@
+# agents/email_sender.py
 import os
-import json
 import csv
-import logging
-import base64
+import json
 import time
+import base64
 import pickle
+import logging
 import re
 from datetime import datetime
+from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from pathlib import Path
+from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 
 # Gmail API imports
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Gemini AI imports
 import google.generativeai as genai
 
-class CompleteEmailSystem:
-    def __init__(self):
-        # Gmail API scope - full access needed for reading and sending
-        self.SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+# Local token generator
+from utils.generate_token import generate_token
 
-        # Setup logging
+
+class CompleteEmailSystem:
+    def __init__(self, requirements_path: str = "inputs/customer_requirements.json"):
+        self.SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
+
+        # Project root
+        self.project_root = Path(__file__).resolve().parents[1]
+
+        # Setup centralized logging
         self.setup_logging()
 
-        # Initialize Gmail service
+        # Load campaign config (customer_requirements.json)
+        self.config = self.load_requirements(requirements_path)
+
+        # Read communication settings & template path from config
+        self.comm = self.config.get("communication_settings", {})
+        self.company = self.config.get("company_profile", {})
+        templates = self.config.get("templates", {})
+        template_rel = templates.get("initial_email_html")
+        if not template_rel:
+            self.logger.error("Template path not specified in customer_requirements.json > templates.initial_email_html")
+            raise FileNotFoundError("initial_email_html not specified in customer_requirements.json")
+
+        self.template_path = (self.project_root / template_rel).resolve()
+        if not self.template_path.exists():
+            self.logger.error(f"Template file not found: {self.template_path}")
+            raise FileNotFoundError(f"Template file not found: {self.template_path}")
+
+        # Parse template and subject
+        self.template_html = self.template_path.read_text(encoding="utf-8")
+        self.subject = self._parse_subject_from_template(self.template_html) or f"Hello from {self.company.get('name', '')}".strip()
+
+        # Setup Gmail
         self.service = None
         self.authenticate()
 
-        # Load email template
-        self.template = self.load_template()
-
-        # Auto-reply setup
+        # Load whitelisted recipients (for testing)
         self.whitelisted_emails = self.load_whitelisted_emails()
-        self.processed_emails = set()
 
-        # Configure Gemini API
+        # State: processed emails persisted across restarts
+        self.processed_file = self.project_root / "logs" / "processed_emails.json"
+        self.processed_emails = self._load_processed_emails()
+
+        # Gemini setup
         load_dotenv()
-
         self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
         if not self.GEMINI_API_KEY:
-            raise ValueError("❌ GEMINI_API_KEY not found in .env file")
+            self.logger.error("GEMINI_API_KEY not found in environment.")
+            raise ValueError("GEMINI_API_KEY not found in environment")
 
-        # Configure Gemini
         genai.configure(api_key=self.GEMINI_API_KEY)
-        self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-        self.logger.info("Gemini API configured successfully using brodomyjob@gmail.com key")
+        self.gemini_model = genai.GenerativeModel("gemini-2.5-flash")
+        self.logger.info("Gemini configured with model gemini-2.5-flash")
 
-
+    # -----------------------
+    # Logging
+    # -----------------------
     def setup_logging(self):
-        """Setup logging configuration and ensure Email Logs folder exists (in project root)"""
-        project_root = Path(__file__).resolve().parents[1]
-        logs_dir = project_root / "Email Logs"
+        logs_dir = (Path(__file__).resolve().parents[1] / "logs")
         logs_dir.mkdir(exist_ok=True)
+        log_file = logs_dir / "email_sender.log"
 
-        log_file = logs_dir / "complete_email_system.log"
+        handler = RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+        console = logging.StreamHandler()
 
         logging.basicConfig(
             level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
+            format="%(asctime)s [%(levelname)s] [PID:%(process)d] %(message)s",
+            handlers=[handler, console],
         )
         self.logger = logging.getLogger(__name__)
-        self.logger.info(f"Logging initialized. Logs saved in: {log_file}")
+        self.logger.info(f"Logging initialized — writing to {log_file}")
 
-
-
-    def authenticate(self):
-        """Authenticate with Gmail API"""
-        creds = None
-
-        # Check for existing credentials
-        for token_file in ['token.json', 'token.pickle']:
-            if os.path.exists(token_file):
-                if token_file.endswith('.json'):
-                    creds = Credentials.from_authorized_user_file(token_file, self.SCOPES)
-                else:
-                    with open(token_file, 'rb') as token:
-                        creds = pickle.load(token)
-                break
-
-        # Get new credentials if needed
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists('credentials.json'):
-                    self.logger.error("credentials.json not found")
-                    raise FileNotFoundError("credentials.json not found")
-
-                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', self.SCOPES)
-                creds = flow.run_local_server(port=0)
-
-            # Save credentials
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
-
+    # -----------------------
+    # Config loading
+    # -----------------------
+    def load_requirements(self, path: str):
+        p = Path(path)
+        if not p.exists():
+            self.logger.error(f"customer_requirements.json not found at {p}")
+            raise FileNotFoundError("customer_requirements.json missing")
         try:
-            self.service = build('gmail', 'v1', credentials=creds)
-            self.logger.info("Gmail API authentication successful")
+            data = json.loads(p.read_text(encoding="utf-8"))
+            # keep existing keys intact (we don't reformat)
+            self.logger.info("Loaded customer_requirements.json")
+            return data
         except Exception as e:
-            self.logger.error(f"Failed to build Gmail service: {e}")
+            self.logger.error(f"Error reading requirements file: {e}")
             raise
 
-    def load_template(self):
-        """Load email template"""
-        return """<div dir="ltr">
-<p style="font-family:Arial,sans-serif;font-size:11pt">
-<strong>Hi {{name}},</strong>
-</p>
+    # -----------------------
+    # Template utilities
+    # -----------------------
+    def _parse_subject_from_template(self, html_text: str):
+        """
+        Optional: allow subject to be declared at the top of template as:
+        <!-- SUBJECT: Your subject line here -->
+        """
+        m = re.search(r"<!--\s*SUBJECT\s*:\s*(.*?)\s*-->", html_text, flags=re.IGNORECASE)
+        if m:
+            subject = m.group(1).strip()
+            self.logger.info(f"Subject parsed from template: {subject}")
+            return subject
+        return None
 
-<p style="font-family:Arial,sans-serif;font-size:11pt">
-I hope this message finds you well.
-</p>
+    def render_template(self, recipient_name: str, extra_ctx: dict = None):
+        """
+        Replace placeholders like {{name}}, {{company}}, {{sender_name}}, etc.
+        extra_ctx can supply additional variables if required.
+        """
+        ctx = {
+            "name": recipient_name,
+            "company": self.company.get("name", ""),
+            "product_description": self.company.get("description", ""),
+            "sender_name": self.comm.get("sender_name", ""),
+            "sender_designation": self.comm.get("sender_designation", ""),
+            "sender_email": self.comm.get("sender_email", ""),
+            "sender_phone": self.comm.get("sender_phone", "")
+        }
+        if extra_ctx:
+            ctx.update(extra_ctx)
 
-<p style="font-family:Arial,sans-serif;font-size:11pt">
-I'm reaching out from <strong>EcoCup Solutions</strong>, where we specialize in high-quality, eco-friendly paper cups that businesses like yours rely on daily. Our cups are:
-</p>
+        rendered = self.template_html
+        for k, v in ctx.items():
+            rendered = rendered.replace("{{" + k + "}}", str(v))
+        return rendered
 
-<ul style="font-family:Arial,sans-serif;font-size:11pt">
-<li>🌱 100% food-grade and safe</li>
-<li>♻️ Sustainable and recyclable</li>
-<li>💰 Cost-effective with bulk order discounts</li>
-<li>🎨 Customizable with your branding</li>
-</ul>
+    # -----------------------
+    # Gmail auth
+    # -----------------------
+    def authenticate(self):
+        creds = None
+        token_path = Path("token.json")
+        if token_path.exists():
+            try:
+                creds = Credentials.from_authorized_user_file(token_path, self.SCOPES)
+            except Exception as e:
+                self.logger.warning(f"Error loading token.json: {e}")
 
-<p style="font-family:Arial,sans-serif;font-size:11pt">
-We currently supply to <strong>cafés, restaurants, corporate offices, and catering companies</strong>, helping them serve beverages in a more sustainable way while reducing costs.
-</p>
+        if not creds or not creds.valid:
+            self.logger.warning("Token invalid/missing. Running generate_token()...")
+            ok = generate_token()
+            if not ok:
+                raise RuntimeError("Failed to generate Gmail token.")
+            creds = Credentials.from_authorized_user_file(token_path, self.SCOPES)
 
-<p style="font-family:Arial,sans-serif;font-size:11pt">
-I'd love to understand your current paper cup needs and explore how we can help you. Would you be open to a quick call next week?
-</p>
+        self.service = build("gmail", "v1", credentials=creds)
+        self.logger.info("Gmail API authenticated")
 
-<p style="font-family:Arial,sans-serif;font-size:11pt">
-Looking forward to your reply.
-</p>
-
-<p style="font-family:Arial,sans-serif;font-size:11pt">
-<strong>Best regards,</strong><br>
-Alex Johnson<br>
-Sales Manager | EcoCup Solutions<br>
-<a href="mailto:alex.johnson@ecocupsolutions.com">alex.johnson@ecocupsolutions.com</a><br>
-+1 (555) 123-4567
-</p>
-</div>"""
-
+    # -----------------------
+    # Recipients (testing)
+    # -----------------------
     def load_whitelisted_emails(self):
-        """Load whitelisted emails from recipients.csv"""
-        whitelisted = set()
+        """
+        Load emails from recipients.csv for testing/demo only.
+        Assumes recipients.csv has 'name' and 'email' columns.
+        """
+        p = Path("recipients.csv")
+        if not p.exists():
+            self.logger.error("recipients.csv not found. Create it for testing recipients.")
+            raise FileNotFoundError("recipients.csv missing")
+        recipients = set()
+        with p.open("r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                email = r.get("email", "").strip().lower()
+                if email:
+                    recipients.add(email)
+        self.logger.info(f"Loaded {len(recipients)} whitelisted/test recipients.")
+        return recipients
+
+    # -----------------------
+    # Message creation & send
+    # -----------------------
+    def create_email_message(self, recipient: dict):
+        """
+        recipient: {'name': 'Foo', 'email': 'foo@example.com'}
+        """
         try:
-            with open('recipients.csv', 'r') as file:
-                reader = csv.DictReader(file)
-                for row in reader:
-                    whitelisted.add(row['email'].lower())
-        except FileNotFoundError:
-            self.logger.info("recipients.csv not found, creating with default emails...")
-            with open('recipients.csv', 'w', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(['name', 'email'])
-                emails = [
-                    ['Nav', 'capitalbawa@gmail.com'],
-                    ['Bawa', 'navnoorbawa21@gmail.com'],
-                    ['Jorge', 'navnoorhedgefundmanager@gmail.com'],
-                    ['Noor', 'navnoorhedgefund@gmail.com'],
-                    ['King', 'navnoorbillionaire@gmail.com'],
-                    ['Eloit', 'navnoorstartupfounder@gmail.com']
-                ]
-                writer.writerows(emails)
-            return self.load_whitelisted_emails()
+            html_body = self.render_template(recipient['name'])
+            # Append dynamic signature based on comm config (keeps signature out of template)
+            signature_html = (
+                f"<br><strong>Best regards,</strong><br>"
+                f"{self.comm.get('sender_name','')}<br>"
+                f"{self.comm.get('sender_designation','')} | {self.company.get('name','')}<br>"
+                f"<a href='mailto:{self.comm.get('sender_email','')}'>{self.comm.get('sender_email','')}</a><br>"
+                f"{self.comm.get('sender_phone','')}"
+            )
+            final_html = f"<div style='font-family:Arial,sans-serif;font-size:11pt;line-height:1.5'>{html_body}{signature_html}</div>"
 
-        self.logger.info(f"Loaded {len(whitelisted)} whitelisted emails")
-        return whitelisted
-
-    def validate_email(self, email):
-        """Validate email address format"""
-        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        return re.match(pattern, email) is not None
-
-    def load_recipients(self, csv_file):
-        """Load recipients from CSV file"""
-        recipients = []
-
-        if not os.path.exists(csv_file):
-            self.logger.error(f"Recipients file not found: {csv_file}")
-            return recipients
-
-        try:
-            with open(csv_file, 'r', newline='', encoding='utf-8') as file:
-                reader = csv.DictReader(file)
-
-                for row_num, row in enumerate(reader, start=2):
-                    name = row.get('name', '').strip()
-                    email_field = row.get('email', '').strip()
-
-                    if not name or not email_field:
-                        continue
-
-                    emails = [email.strip().lower() for email in email_field.split(',')]
-
-                    for email in emails:
-                        if email and self.validate_email(email):
-                            recipients.append({
-                                'name': name,
-                                'email': email,
-                                'row_num': row_num
-                            })
-
-            self.logger.info(f"Loaded {len(recipients)} valid recipients from {csv_file}")
-            return recipients
-
+            msg = MIMEMultipart("alternative")
+            msg["From"] = self.comm.get("sender_email")
+            msg["To"] = recipient["email"]
+            msg["Subject"] = self.subject
+            # Include X-Mailer or other helpful headers if desired
+            msg.attach(MIMEText(final_html, "html"))
+            return msg
         except Exception as e:
-            self.logger.error(f"Error reading CSV file: {e}")
-            return []
-
-    def create_email_message(self, recipient):
-        """Create email message with template"""
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = 'brodomyjob@gmail.com'
-            msg['To'] = recipient['email']
-            msg['Subject'] = 'Eco-friendly Paper Cups for Your Business ☕'
-
-            email_body = self.template.replace('{{name}}', recipient['name'])
-            msg.attach(MIMEText(email_body, 'html'))
-
-            return msg.as_string()
-
-        except Exception as e:
-            self.logger.error(f"Error creating email message for {recipient['email']}: {e}")
+            self.logger.error(f"Error creating email message for {recipient.get('email')}: {e}")
             return None
 
-    def send_email(self, recipient):
-        """Send individual email"""
-        try:
-            message = self.create_email_message(recipient)
-            if not message:
-                return False
-
-            gmail_message = {
-                'raw': base64.urlsafe_b64encode(message.encode()).decode()
-            }
-
-            result = self.service.users().messages().send(
-                userId='me',
-                body=gmail_message
-            ).execute()
-
-            self.track_email_sent(recipient)
-            self.logger.info(f"✓ Email sent successfully to {recipient['email']} (ID: {result['id']})")
-            return True
-
-        except HttpError as error:
-            self.logger.error(f"✗ Gmail API error sending to {recipient['email']}: {error}")
+    def send_email(self, recipient: dict, max_retries=3):
+        msg_obj = self.create_email_message(recipient)
+        if not msg_obj:
             return False
-        except Exception as e:
-            self.logger.error(f"✗ Unexpected error sending to {recipient['email']}: {e}")
-            return False
-
-    def track_email_sent(self, recipient):
-        """Track sent email in CSV file inside Email Logs folder (in project root)"""
-        try:
-            project_root = Path(__file__).resolve().parents[1]
-            logs_dir = project_root / "Email Logs"
-            logs_dir.mkdir(exist_ok=True)
-
-            tracking_file = logs_dir / "email_tracking.csv"
-            file_exists = tracking_file.exists()
-
-            now = datetime.now()
-            date_str = now.strftime('%Y-%m-%d')
-            time_str = now.strftime('%H:%M:%S')
-
-            with open(tracking_file, 'a', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-                if not file_exists:
-                    writer.writerow(['name', 'email', 'date', 'time'])
-                writer.writerow([recipient['name'], recipient['email'], date_str, time_str])
-
-            self.logger.info(f"Tracked email send to {recipient['email']} at {date_str} {time_str}")
-
-        except Exception as e:
-            self.logger.error(f"Error tracking email for {recipient['email']}: {e}")
-
-
-
-    def send_bulk_emails(self, csv_file, rate_limit_delay=2):
-        """Send emails to all recipients"""
-        self.logger.info("🚀 Starting bulk email sending process")
-
-        recipients = self.load_recipients(csv_file)
-        if not recipients:
-            self.logger.error("No valid recipients found")
-            return False
-
-        sent_count = 0
-        failed_count = 0
-
-        self.logger.info(f"Sending emails to {len(recipients)} recipients...")
-        self.logger.info(f"Rate limit: {rate_limit_delay} seconds between emails")
-
-        for i, recipient in enumerate(recipients):
-            self.logger.info(f"Processing {i+1}/{len(recipients)}: {recipient['email']}")
-
-            success = self.send_email(recipient)
-
-            if success:
-                sent_count += 1
-            else:
-                failed_count += 1
-
-            if i < len(recipients) - 1:
-                time.sleep(rate_limit_delay)
-
-        # Summary
-        self.logger.info("=" * 50)
-        self.logger.info("BULK EMAIL SUMMARY")
-        self.logger.info("=" * 50)
-        self.logger.info(f"Total recipients: {len(recipients)}")
-        self.logger.info(f"Successfully sent: {sent_count}")
-        self.logger.info(f"Failed: {failed_count}")
-        self.logger.info(f"Success rate: {(sent_count/len(recipients)*100):.1f}%")
-        self.logger.info("=" * 50)
-
-        return sent_count > 0
-
-    # AUTO-REPLY FUNCTIONALITY
-    def is_whitelisted_sender(self, sender_email):
-        """Check if sender is in our whitelist"""
-        if '<' in sender_email:
-            sender_email = sender_email.split('<')[1].split('>')[0]
-        return sender_email.lower() in self.whitelisted_emails
-
-    def get_unread_emails(self):
-        """Get unread emails from whitelisted senders only"""
-        try:
-            results = self.service.users().messages().list(
-                userId='me',
-                q='is:unread'
-            ).execute()
-
-            messages = results.get('messages', [])
-            whitelisted_messages = []
-
-            for message in messages:
-                msg = self.service.users().messages().get(
-                    userId='me',
-                    id=message['id']
-                ).execute()
-
-                headers = msg['payload'].get('headers', [])
-                sender = None
-                for header in headers:
-                    if header['name'] == 'From':
-                        sender = header['value']
-                        break
-
-                if sender and self.is_whitelisted_sender(sender):
-                    whitelisted_messages.append(message)
-                    self.logger.info(f"Found whitelisted email from: {sender}")
+        raw = base64.urlsafe_b64encode(msg_obj.as_bytes()).decode("utf-8")
+        body = {"raw": raw}
+        attempt = 0
+        backoff = 5
+        while attempt < max_retries:
+            try:
+                res = self.service.users().messages().send(userId="me", body=body).execute()
+                self._track_email(recipient, kind="campaign", message_id=res.get("id"))
+                self.logger.info(f"Sent email to {recipient['email']} (ID: {res.get('id')})")
+                return True
+            except HttpError as e:
+                status = getattr(e.resp, "status", None)
+                self.logger.warning(f"Gmail HttpError status={status} attempt={attempt+1}/{max_retries}: {e}")
+                if status in (429, 503):
+                    time.sleep(backoff)
+                    backoff *= 2
+                    attempt += 1
+                    continue
                 else:
-                    self.logger.info(f"Skipping non-whitelisted email from: {sender}")
+                    break
+            except Exception as e:
+                self.logger.error(f"Unexpected error sending email to {recipient['email']}: {e}")
+                break
+        self.logger.error(f"Failed to send email to {recipient['email']} after {max_retries} attempts")
+        return False
 
-            return whitelisted_messages
-
+    # -----------------------
+    # Tracking
+    # -----------------------
+    def _track_email(self, recipient: dict, kind: str = "campaign", thread_id: str = "", message_id: str = ""):
+        try:
+            logs_dir = self.project_root / "logs"
+            logs_dir.mkdir(exist_ok=True)
+            tracking_file = logs_dir / "email_tracking.csv"
+            exists = tracking_file.exists()
+            now = datetime.now()
+            with tracking_file.open("a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                if not exists:
+                    writer.writerow(["name", "email", "date", "time", "kind", "thread_id", "message_id"])
+                writer.writerow([
+                    recipient.get("name", ""),
+                    recipient.get("email", ""),
+                    now.strftime("%Y-%m-%d"),
+                    now.strftime("%H:%M:%S"),
+                    kind,
+                    thread_id or "",
+                    message_id or ""
+                ])
         except Exception as e:
-            self.logger.error(f"Error getting emails: {e}")
+            self.logger.error(f"Error tracking email: {e}")
+
+    # -----------------------
+    # Auto-reply: fetch / detect / details
+    # -----------------------
+    def get_unread_emails(self):
+        try:
+            res = self.service.users().messages().list(userId="me", q="is:unread").execute()
+            return res.get("messages", [])
+        except Exception as e:
+            self.logger.error(f"Error listing unread emails: {e}")
             return []
 
-    def get_email_details(self, message_id):
-        """Extract email details"""
+    def get_email_details(self, message_id: str):
         try:
-            message = self.service.users().messages().get(
-                userId='me',
-                id=message_id
-            ).execute()
-
-            headers = message['payload'].get('headers', [])
-            email_data = {}
-
-            for header in headers:
-                if header['name'] == 'From':
-                    email_data['from'] = header['value']
-                elif header['name'] == 'Subject':
-                    email_data['subject'] = header['value']
-                elif header['name'] == 'Message-ID':
-                    email_data['message_id'] = header['value']
-
-            email_data['body'] = self.extract_email_body(message)
-            email_data['thread_id'] = message['threadId']
-            email_data['id'] = message_id
-
-            return email_data
-
+            m = self.service.users().messages().get(userId="me", id=message_id, format="full").execute()
+            headers = m.get("payload", {}).get("headers", [])
+            details = {}
+            for h in headers:
+                name = h.get("name", "").lower()
+                if name == "from":
+                    details["from"] = h.get("value")
+                elif name == "subject":
+                    details["subject"] = h.get("value")
+                elif name == "message-id":
+                    details["message_id"] = h.get("value")
+            details["thread_id"] = m.get("threadId")
+            # extract body (prefer text/plain, else try html)
+            details["body"] = self._extract_body(m)
+            details["id"] = message_id
+            return details
         except Exception as e:
-            self.logger.error(f"Error getting email details: {e}")
+            self.logger.error(f"Error fetching message {message_id}: {e}")
             return None
 
-    def extract_email_body(self, message):
-        """Extract email body text"""
-        try:
-            payload = message['payload']
+    def _extract_body(self, message):
+        payload = message.get("payload", {})
+        # recursive helper
+        def walk_parts(parts):
+            for p in parts:
+                mime = p.get("mimeType", "")
+                if mime == "text/plain":
+                    data = p.get("body", {}).get("data")
+                    if data:
+                        return base64.urlsafe_b64decode(data).decode("utf-8")
+                if mime == "text/html":
+                    data = p.get("body", {}).get("data")
+                    if data:
+                        # prefer html if plain not available
+                        return base64.urlsafe_b64decode(data).decode("utf-8")
+                # nested parts
+                if p.get("parts"):
+                    res = walk_parts(p.get("parts"))
+                    if res:
+                        return res
+            return None
 
-            if 'parts' in payload:
-                for part in payload['parts']:
-                    if part['mimeType'] == 'text/plain':
-                        data = part['body']['data']
-                        return base64.urlsafe_b64decode(data).decode('utf-8')
+        if "parts" in payload:
+            result = walk_parts(payload["parts"])
+            if result:
+                return result
+        # fallback
+        body = payload.get("body", {}).get("data")
+        if body:
+            return base64.urlsafe_b64decode(body).decode("utf-8")
+        return ""
 
-            elif payload['mimeType'] == 'text/plain':
-                data = payload['body']['data']
-                return base64.urlsafe_b64decode(data).decode('utf-8')
-
-            return "Could not extract email body"
-
-        except Exception as e:
-            self.logger.error(f"Error extracting body: {e}")
-            return "Error extracting email content"
-
-    def classify_email(self, email_content, sender):
-        """Classify if email needs reply"""
-        lower_content = email_content.lower()
-        lower_subject = sender.lower()
-
-        # Skip auto-replies
-        auto_reply_indicators = [
-            'out of office', 'auto-reply', 'automatic reply',
-            'vacation', 'away from office', 'currently unavailable',
-            'do not reply', 'noreply', 'no-reply'
-        ]
-
-        for indicator in auto_reply_indicators:
-            if indicator in lower_content or indicator in lower_subject:
+    # -----------------------
+    # Classification & reply generation
+    # -----------------------
+    def classify_email(self, content: str, sender: str):
+        auto_indicators = ["out of office", "auto-reply", "automatic reply", "vacation", "noreply", "no-reply"]
+        lower = (content or "").lower()
+        for i in auto_indicators:
+            if i in lower or i in (sender or "").lower():
                 return "auto_reply"
-
         return "reply_needed"
 
-    def generate_reply(self, email_data):
-        """Generate context-aware reply using Gemini AI"""
-        try:
-            # Extract relevant information
-            sender = email_data.get('from', 'Unknown')
-            subject = email_data.get('subject', 'No Subject')
-            body = email_data.get('body', '')
-
-            # Create a prompt for Gemini to understand context and generate reply
-            prompt = f"""You are Alex Johnson, Sales Manager at EcoCup Solutions, a company that sells eco-friendly paper cups to businesses.
-
-You previously sent an email to a potential client about your eco-friendly paper cups. They have now replied to you.
-
-Here is their email:
----
-From: {sender}
-Subject: {subject}
-
-{body}
----
-
-Based on their response, generate a professional, context-aware reply email. The reply should:
-1. Address their specific questions or concerns if any
-2. Show enthusiasm about their interest
-3. Provide helpful information or next steps
-4. Be friendly and professional
-5. Include your signature at the end
-6. Keep it concise (3-5 short paragraphs max)
-
-Your signature should be:
-Best regards,
-Alex Johnson
-Sales Manager | EcoCup Solutions
-alex.johnson@ecocupsolutions.com
-+1 (555) 123-4567
-
-Generate ONLY the email body text. Do not include subject line or email headers."""
-
-            # Generate reply using Gemini
-            self.logger.info("Using Gemini AI to generate context-aware reply...")
-            response = self.gemini_model.generate_content(prompt)
-
-            if response and response.text:
-                generated_reply = response.text.strip()
-                self.logger.info(f"Generated reply length: {len(generated_reply)} characters")
-                return generated_reply
-            else:
-                self.logger.warning("Gemini returned empty response, using fallback")
-                return self.generate_fallback_reply()
-
-        except Exception as e:
-            self.logger.error(f"Error generating reply with Gemini: {e}")
-            self.logger.info("Using fallback reply")
-            return self.generate_fallback_reply()
-
-    def generate_fallback_reply(self):
-        """Generate simple fallback reply if Gemini fails"""
-        return """Thank you for your response!
-
-I appreciate your interest in EcoCup Solutions. I'll review your message and get back to you shortly with more details.
-
-Best regards,
-Alex Johnson
-Sales Manager | EcoCup Solutions
-alex.johnson@ecocupsolutions.com
-+1 (555) 123-4567"""
-
-    def send_reply(self, original_email, reply_content):
-        """Send reply email"""
-        try:
-            reply_msg = MIMEMultipart()
-            reply_msg['To'] = original_email['from']
-            reply_msg['Subject'] = f"Re: {original_email['subject']}"
-            reply_msg['In-Reply-To'] = original_email.get('message_id', '')
-
-            reply_msg.attach(MIMEText(reply_content, 'plain'))
-
-            raw_message = base64.urlsafe_b64encode(
-                reply_msg.as_bytes()
-            ).decode('utf-8')
-
-            message_body = {
-                'raw': raw_message,
-                'threadId': original_email['thread_id']
-            }
-
-            sent_message = self.service.users().messages().send(
-                userId='me',
-                body=message_body
-            ).execute()
-
-            self.logger.info(f"✅ Reply sent successfully to {original_email['from']} (ID: {sent_message['id']})")
-            return sent_message['id']
-
-        except Exception as e:
-            self.logger.error(f"❌ Error sending reply: {e}")
-            return None
-
-    def mark_as_read(self, message_id):
-        """Mark email as read"""
-        try:
-            self.service.users().messages().modify(
-                userId='me',
-                id=message_id,
-                body={'removeLabelIds': ['UNREAD']}
-            ).execute()
-        except Exception as e:
-            self.logger.error(f"Error marking as read: {e}")
-
-    def run_auto_reply_monitoring(self):
-        """Main auto-reply loop"""
-        self.logger.info("🚀 Starting auto-reply monitoring for whitelisted emails...")
-        self.logger.info(f"Monitoring emails from: {', '.join(self.whitelisted_emails)}")
-
-        while True:
+    def _gemini_generate_with_backoff(self, prompt: str, retries: int = 3, initial_backoff: int = 5):
+        for attempt in range(retries):
             try:
-                self.logger.info(f"⏰ Checking for new emails at {time.strftime('%Y-%m-%d %H:%M:%S')}")
-
-                unread_emails = self.get_unread_emails()
-
-                for email in unread_emails:
-                    if email['id'] in self.processed_emails:
-                        continue
-
-                    email_data = self.get_email_details(email['id'])
-                    if not email_data:
-                        continue
-
-                    self.logger.info(f"📧 Processing email from: {email_data['from']}")
-                    self.logger.info(f"Subject: {email_data['subject']}")
-
-                    if email['id'] in self.processed_emails:
-                        self.logger.info("⏭️  Already processed in this session, skipping...")
-                        continue
-
-                    classification = self.classify_email(
-                        email_data['body'],
-                        email_data['from']
-                    )
-                    self.logger.info(f"📊 Classification: {classification}")
-
-                    if classification == 'reply_needed':
-                        reply_content = self.generate_reply(email_data)
-                        self.logger.info("💬 Generating thank you reply...")
-
-                        message_id = self.send_reply(email_data, reply_content)
-
-                        if message_id:
-                            self.logger.info("✅ Thank you reply sent successfully!")
-
-                        self.mark_as_read(email['id'])
-                    else:
-                        self.logger.info(f"⏭️  No reply needed ({classification})")
-
-                    self.processed_emails.add(email['id'])
-
-                if not unread_emails:
-                    self.logger.info("📭 No new whitelisted emails found")
-
-                self.logger.info("⏳ Waiting 3 minutes before next check...")
-                time.sleep(180)
-
-            except KeyboardInterrupt:
-                self.logger.info("🛑 Auto-reply monitoring stopped by user")
-                break
+                response = self.gemini_model.generate_content(prompt, request_options={"timeout": 60})
+                if response and getattr(response, "text", None):
+                    return response.text.strip()
+                raise ValueError("Empty response from Gemini")
             except Exception as e:
-                self.logger.error(f"❌ Error in auto-reply loop: {e}")
-                time.sleep(60)
+                err = str(e).lower()
+                # retry on rate-limit / quota-ish messages
+                if "429" in err or "quota" in err or "rate-limit" in err or "quota" in err:
+                    backoff = initial_backoff * (2 ** attempt)
+                    self.logger.warning(f"Gemini rate-limit detected (attempt {attempt+1}/{retries}), backing off {backoff}s")
+                    time.sleep(backoff)
+                    continue
+                self.logger.warning(f"Gemini non-retryable error: {e}")
+                break
+        return None
 
-    def run_complete_system(self):
-        """Run the complete email system - send emails then monitor for replies"""
-        print("=" * 60)
-        print("🚀 COMPLETE EMAIL AUTOMATION SYSTEM")
-        print("=" * 60)
+    def generate_reply(self, email_data: dict):
+        """
+        Ask Gemini to create an HTML reply. If Gemini fails, create a fallback reply using sender/company info.
+        """
+        sender = email_data.get("from", "Contact")
+        subject = email_data.get("subject", "")
+        body = email_data.get("body", "")
 
-        # Step 1: Send bulk emails
-        print("📤 STEP 1: Sending emails to recipients...")
-        success = self.send_bulk_emails("recipients.csv", rate_limit_delay=2)
+        # Build a prompt that instructs HTML output and includes company context
+        prompt = (
+            f"You are {self.comm.get('sender_name')} ({self.comm.get('sender_designation')}) at {self.company.get('name')}.\n"
+            "You previously sent an outreach email. The contact replied; here is their message:\n\n"
+            f"From: {sender}\nSubject: {subject}\n\n{body}\n\n"
+            "Generate a concise, professional HTML reply (use <p> for paragraphs). Keep it 2-4 short paragraphs and include a brief signature "
+            f"with name, designation and contact email ({self.comm.get('sender_email')}). Do not include subject line or headers — only the HTML body."
+        )
 
-        if not success:
-            print("❌ Email sending failed. Stopping.")
-            return
+        generated = self._gemini_generate_with_backoff(prompt)
+        if generated:
+            return generated
 
-        print("✅ Email sending completed successfully!")
-        print("")
+        # fallback: dynamically generate a polite reply
+        fallback = (
+            f"<p>Thank you for your response.</p>"
+            f"<p>I appreciate you taking the time to reply — I'll review your message and follow up with more details shortly.</p>"
+            f"<p>Best regards,<br>{self.comm.get('sender_name')}<br>{self.comm.get('sender_designation')} | {self.company.get('name')}<br>"
+            f"<a href='mailto:{self.comm.get('sender_email')}'>{self.comm.get('sender_email')}</a></p>"
+        )
+        return fallback
 
-        # Step 2: Start auto-reply monitoring
-        print("🔄 STEP 2: Starting auto-reply monitoring...")
-        print("Press Ctrl+C to stop the auto-reply system")
-        print("-" * 60)
-
+    # -----------------------
+    # Send reply & marking
+    # -----------------------
+    def send_reply(self, original_email: dict, reply_html: str):
         try:
-            self.run_auto_reply_monitoring()
-        except KeyboardInterrupt:
-            print("\n🛑 Complete email system stopped by user")
+            msg = MIMEMultipart("alternative")
+            msg["To"] = original_email.get("from")
+            # Compose subject as Re: original subject
+            base_subject = original_email.get("subject", "")
+            msg["Subject"] = f"Re: {base_subject}" if base_subject else f"Re: {self.company.get('name')}"
+            # Include in-reply-to header if present
+            if original_email.get("message_id"):
+                msg["In-Reply-To"] = original_email.get("message_id")
+                msg["References"] = original_email.get("message_id")
 
+            msg.attach(MIMEText(reply_html, "html"))
+            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+            body = {"raw": raw, "threadId": original_email.get("thread_id")}
+            sent = self.service.users().messages().send(userId="me", body=body).execute()
+            # track reply
+            self._track_email({
+                "name": original_email.get("from"),
+                "email": original_email.get("from")
+            }, kind="reply", thread_id=original_email.get("thread_id"), message_id=sent.get("id"))
+            self.logger.info(f"Reply sent to {original_email.get('from')} (ID: {sent.get('id')})")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error sending reply: {e}")
+            return False
+
+    def mark_as_read(self, message_id: str):
+        try:
+            self.service.users().messages().modify(userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}).execute()
+        except Exception as e:
+            self.logger.error(f"Error marking message {message_id} as read: {e}")
+
+    # -----------------------
+    # Processed emails persistence
+    # -----------------------
+    def _load_processed_emails(self):
+        try:
+            if self.processed_file.exists():
+                data = json.loads(self.processed_file.read_text(encoding="utf-8"))
+                return set(data)
+        except Exception as e:
+            self.logger.warning(f"Could not load processed_emails: {e}")
+        return set()
+
+    def _save_processed_emails(self):
+        try:
+            self.processed_file.parent.mkdir(parents=True, exist_ok=True)
+            self.processed_file.write_text(json.dumps(list(self.processed_emails)), encoding="utf-8")
+        except Exception as e:
+            self.logger.error(f"Failed to save processed_emails: {e}")
+
+    # -----------------------
+    # Main auto-reply loop
+    # -----------------------
+    def run_auto_reply_monitoring(self, check_interval: int = 180):
+        self.logger.info("Starting auto-reply monitoring loop...")
+        try:
+            while True:
+                messages = self.get_unread_emails()
+                if not messages:
+                    self.logger.info("No unread emails.")
+                for m in messages:
+                    msg_id = m.get("id")
+                    if not msg_id or msg_id in self.processed_emails:
+                        continue
+                    details = self.get_email_details(msg_id)
+                    if not details:
+                        continue
+                    sender = details.get("from", "")
+                    if not self._is_whitelisted(sender):
+                        self.logger.info(f"Skipping non-whitelisted sender: {sender}")
+                        self.mark_as_read(msg_id)
+                        self.processed_emails.add(msg_id)
+                        self._save_processed_emails()
+                        continue
+
+                    classification = self.classify_email(details.get("body", ""), sender)
+                    if classification == "reply_needed":
+                        reply_html = self.generate_reply(details)
+                        sent_ok = self.send_reply(details, reply_html)
+                        if sent_ok:
+                            self.logger.info("Reply sent; marking as read.")
+                    else:
+                        self.logger.info(f"No reply needed ({classification})")
+                    # mark processed & persist
+                    self.mark_as_read(msg_id)
+                    self.processed_emails.add(msg_id)
+                    self._save_processed_emails()
+
+                self.logger.info(f"Sleeping {check_interval} seconds before next poll...")
+                time.sleep(check_interval)
+        except KeyboardInterrupt:
+            self.logger.info("Auto-reply monitoring stopped by user.")
+        except Exception as e:
+            self.logger.exception(f"Error in auto-reply loop: {e}")
+
+    def _is_whitelisted(self, sender_header: str):
+        if not sender_header:
+            return False
+        if "<" in sender_header:
+            email = sender_header.split("<")[1].split(">")[0].strip().lower()
+        else:
+            email = sender_header.strip().lower()
+        return email in self.whitelisted_emails
+
+    # -----------------------
+    # Main campaign runner
+    # -----------------------
+    def send_bulk_emails(self, csv_file: str, rate_limit_delay: int = 2):
+        # load recipients (name,email)
+        recipients = []
+        p = Path(csv_file)
+        if not p.exists():
+            self.logger.error(f"Recipients CSV not found: {csv_file}")
+            return False
+        with p.open("r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                name = r.get("name", "").strip()
+                email = r.get("email", "").strip().lower()
+                if name and email:
+                    recipients.append({"name": name, "email": email})
+
+        if not recipients:
+            self.logger.error("No valid recipients found in CSV.")
+            return False
+
+        sent = failed = 0
+        self.logger.info(f"Sending {len(recipients)} emails (delay {rate_limit_delay}s)")
+        for i, rc in enumerate(recipients, 1):
+            self.logger.info(f"[{i}/{len(recipients)}] -> {rc['email']}")
+            ok = self.send_email(rc)
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+            if i < len(recipients):
+                time.sleep(rate_limit_delay)
+
+        self.logger.info(f"Completed campaign. Sent: {sent}, Failed: {failed}")
+        return sent > 0
+
+    # -----------------------
+    # Run combined system
+    # -----------------------
+    def run_complete_system(self):
+        self.logger.info("Starting complete email system")
+        ok = self.send_bulk_emails("recipients.csv", rate_limit_delay=2)
+        if not ok:
+            self.logger.error("Campaign failed; aborting auto-reply monitoring.")
+            return
+        self.run_auto_reply_monitoring()
+
+# -----------------------
+# Entrypoint
+# -----------------------
 def main():
-    """Main function"""
     try:
         system = CompleteEmailSystem()
         system.run_complete_system()
-
     except KeyboardInterrupt:
-        print("\n🛑 System interrupted by user")
+        print("Stopped by user.")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Fatal error: {e}")
 
 if __name__ == "__main__":
     main()
