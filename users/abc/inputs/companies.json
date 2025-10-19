@@ -1,0 +1,25 @@
+[
+  {"name": "Chaayos", "website": "https://chaayos.com"},
+  {"name": "Chai Point", "website": "https://www.chaipoint.com"},
+  {"name": "Barista", "website": "https://www.barista.co.in"},
+  {"name": "Haldiram's", "website": "https://www.haldirams.com"},
+  {"name": "Biryani Blues", "website": "https://www.biryaniblues.com"},
+
+  {"name": "Zomato", "website": "https://www.zomato.com"},
+  {"name": "Swiggy", "website": "https://www.swiggy.com"},
+  {"name": "EatSure", "website": "https://www.eatsure.com"},
+  {"name": "Rebel Foods", "website": "https://www.rebelfoods.com"},
+  {"name": "Zepto", "website": "https://www.zepto.com"},
+
+  {"name": "Paytm", "website": "https://paytm.com"},
+  {"name": "Razorpay", "website": "https://razorpay.com"},
+  {"name": "CRED", "website": "https://cred.club"},
+  {"name": "PhonePe", "website": "https://www.phonepe.com"},
+  {"name": "PolicyBazaar", "website": "https://www.policybazaar.com"},
+
+  {"name": "Byju's", "website": "https://byjus.com"},
+  {"name": "UpGrad", "website": "https://www.upgrad.com"},
+  {"name": "Ola", "website": "https://www.olacabs.com"},
+  {"name": "UrbanClap", "website": "https://www.urbanclap.com"},
+  {"name": "Dream11", "website": "https://www.dream11.com"}
+]

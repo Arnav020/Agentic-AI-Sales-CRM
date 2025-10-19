@@ -1,0 +1,35 @@
+[
+  {
+    "company": "Biryani Blues",
+    "num_found": 0,
+    "employees": []
+  },
+  {
+    "company": "Chai Point",
+    "num_found": 0,
+    "employees": []
+  },
+  {
+    "company": "EatSure",
+    "num_found": 0,
+    "employees": []
+  },
+  {
+    "company": "Swiggy",
+    "num_found": 3,
+    "employees": [
+      {
+        "name": "Shubham Dixit",
+        "title": "Cluster Business Head at Swiggy Instamart ... Google Maps Should My Resume Be in Past or Present Tense? Indeed Minimum present value segment rates Internal Revenue Service Shayutha K B Swiggy LinkedIn Swiggy Head Office, Contact Number Company Contact Detail Swiggy Delivery Partner salaries in India (Updated 2025) Swiggy expands Access kitchens to four metros Vivek Shrivastava Associate Sales Manager LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/shubhamd",
+        "email_guess": "shubham.dixit@swiggy.com",
+        "confidence": 0.8,
+        "verified_email": "",
+        "email_verified": false,
+        "email_classification": "Unknown",
+        "confidence_score": 0.0
+      }
+    ],
+    "verification_status": "unverified"
+  }
+]

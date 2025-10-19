@@ -213,17 +213,30 @@ class ContactFinderAgent:
         self.logger = self._setup_logging()
 
     def _setup_logging(self) -> logging.Logger:
+        import sys
+
         logger = logging.getLogger(f"ContactFinder_{self.user_root}")
         logger.setLevel(logging.INFO)
-        handler = logging.FileHandler(self.log_file)
+
+        # File handler (always UTF-8)
+        handler = logging.FileHandler(self.log_file, encoding="utf-8")
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        console = logging.StreamHandler()
+
+        # Console handler with UTF-8 reconfiguration for Windows terminals
+        console = logging.StreamHandler(stream=sys.stdout)
         console.setFormatter(formatter)
+        try:
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
         logger.addHandler(console)
+
         logger.info(f"Logging initialized for ContactFinder → {self.log_file}")
         return logger
+
 
     def run(self):
         input_json = self.outputs_dir / "employees_companies.json"

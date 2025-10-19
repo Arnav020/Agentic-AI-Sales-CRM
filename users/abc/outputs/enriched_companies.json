@@ -1,0 +1,514 @@
+[
+  {
+    "company": "Barista",
+    "website": "https://www.barista.co.in",
+    "description": "",
+    "hiring": true,
+    "funding_signal": 0.75,
+    "expansion_signal": 0.5,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": [
+        "Baristas",
+        "Baristas Coffee Barista Coffee Company, Inc."
+      ],
+      "founded_year": [
+        "N/A",
+        1981
+      ],
+      "employees_count": "N/A",
+      "headquarters": [
+        "N/A",
+        "New Delhi, India",
+        "Burlington, Massachusetts"
+      ],
+      "industry": "Coffee Industry",
+      "description": "Baristas focuses on providing reviews, how-tos, resources, buying advice, and a platform for sharing opinions about coffee, espresso machines, grinders, and barista techniques for home espresso and coffee enthusiasts.",
+      "products": [
+        "Coffee",
+        "Espresso machines",
+        "Grinders"
+      ],
+      "services": [
+        "Online resource",
+        "Barista training exams"
+      ]
+    }
+  },
+  {
+    "company": "Biryani Blues",
+    "website": "https://www.biryaniblues.com",
+    "description": "Order from your favorite Biryani Blues now to get exclusive offers.",
+    "hiring": true,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "Biryani Blues",
+      "founded_year": "2013",
+      "employees_count": "approximately 103",
+      "headquarters": "Gurugram, India",
+      "industry": "Restaurants and Bars",
+      "description": "A private quick service restaurant (QSR) chain specializing in biryani.",
+      "products": [
+        "Biryani"
+      ],
+      "services": [
+        "Quick service restaurant"
+      ]
+    }
+  },
+  {
+    "company": "Byju's",
+    "website": "https://byjus.com",
+    "description": "Choose another country or region to see content specific to your location.",
+    "hiring": true,
+    "funding_signal": 0.5,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "Byju's",
+      "founded_year": "2011",
+      "employees_count": "over 25,000",
+      "headquarters": "2nd Floor, Tower D, IBC Knowledge Park, 4/1, Bannerghatta Main Road, Bengaluru, India",
+      "industry": "ed-tech",
+      "description": "Global ed-tech company providing adaptive, engaging, and effective learning solutions to over 150 million students worldwide.",
+      "products": [
+        "learning app"
+      ],
+      "services": [
+        "revolutionizing education with interactive and adaptive online learning solutions"
+      ]
+    }
+  },
+  {
+    "company": "CRED",
+    "website": "https://cred.club",
+    "description": "financial & lifestyle experiences crafted for the creditworthy.",
+    "hiring": true,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.25,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "CRED",
+      "founded_year": "2018",
+      "employees_count": "Not specified",
+      "headquarters": "Bangalore, India",
+      "industry": "Fintech",
+      "description": "Indian fintech company offering a reward-based credit card payments app and short-term credit lines.",
+      "products": [
+        "Reward-based credit card payments app",
+        "House rent payments",
+        "Short-term credit lines"
+      ],
+      "services": [
+        "Credit card payments",
+        "House rent payments",
+        "Short-term credit lines"
+      ]
+    }
+  },
+  {
+    "company": "Chaayos",
+    "website": "https://chaayos.com",
+    "description": "Your one stop shop for all your Chai Cravings. Easy way to buy out Masala Tea, Instant Tea, Green Teas and Tea Gifts.",
+    "hiring": true,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.25,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "Chaayos",
+      "founded_year": "2012",
+      "employees_count": "Not specified",
+      "headquarters": "New Delhi, India",
+      "industry": "Retail (Tea and Snacks)",
+      "description": "India-based company specializing in retailing flavored tea and snacks through a chain of physical stores.",
+      "products": [
+        "Masala Tea",
+        "Instant Tea",
+        "Green Teas"
+      ],
+      "services": "Offering traditional tea experiences, selling tea gifts"
+    }
+  },
+  {
+    "company": "Chai Point",
+    "website": "https://www.chaipoint.com",
+    "description": "Buy tea online from Chai Point’s range of instant tea, tea leaves, chai snacks, health combos & more. A great cup for the perfect experience curated and personalized to your taste.",
+    "hiring": false,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "Chai Point",
+      "founded_year": "2010",
+      "employees_count": "Not specified",
+      "headquarters": "Bengaluru, India",
+      "industry": "Food and Beverage",
+      "description": "A tea chain offering a range of products including instant tea, tea leaves, chai snacks, and health combos. They have expanded their presence across retail locations, airports, and business parks.",
+      "products": [
+        "Instant tea",
+        "Tea leaves",
+        "Chai snacks",
+        "Health combos"
+      ],
+      "services": [
+        "Freshly brewed tea through retail stores, delivery, and smart vending"
+      ]
+    }
+  },
+  {
+    "company": "Dream11",
+    "website": "https://www.dream11.com",
+    "description": "Play fantasy sports with more than 25 crore registered users. Download the app now.",
+    "hiring": true,
+    "funding_signal": 0.75,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "Dream11",
+      "founded_year": "2008",
+      "employees_count": "over 100 million (registered users) and claims to have 200 million users as of October 2023",
+      "headquarters": "Mumbai, India",
+      "industry": "Fantasy sports",
+      "description": "An online sports fantasy platform that allows users to create virtual teams of real sports players across various sports.",
+      "products": [
+        "cricket, football, kabaddi, basketball, hockey, volleyball, handball, rugby, baseball"
+      ],
+      "services": [
+        "operates in the fantasy sports industry and competes with platforms like Paytm First Games, bet365, and Colorado Rapids Youth Soccer Club"
+      ]
+    }
+  },
+  {
+    "company": "EatSure",
+    "website": "https://www.eatsure.com",
+    "description": "EatSure is not just a food delivery app. It's a foodcourt on an app, which brings to you food from multiple trusted restaurants in a single delivery. EatSure is also a promise, assuring 100% safety and hygiene in every bite you take. The food that we serve goes through 200+ quality checks . We believe good food is your right. And if you are what you eat, then why not eat only good?",
+    "hiring": false,
+    "funding_signal": 0.0,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "EatSure",
+      "founded_year": "Unknown",
+      "employees_count": "Not specified in the text",
+      "headquarters": "India",
+      "industry": "Food and Beverage, Technology",
+      "description": "A food delivery app that operates as a virtual food court, offering food from multiple trusted restaurants in a single delivery. The company focuses on ensuring 100% food safety and hygiene.",
+      "products": [
+        "Pizza",
+        "Burger",
+        "Biryani",
+        "Wraps",
+        "Desserts"
+      ],
+      "services": [
+        "Online food ordering",
+        "Collaboration with popular restaurants like Faasos"
+      ]
+    }
+  },
+  {
+    "company": "Haldiram's",
+    "website": "https://www.haldirams.com",
+    "description": "Welcome to the home of all your favourite haldiram products. Haldiram sweets, namkeen, bhujia, soan papdii, snacks & more. Free Shipping on orders above ₹500/-",
+    "hiring": true,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "Haldiram's",
+      "founded_year": "1937",
+      "employees_count": "Not specified",
+      "headquarters": "Noida, Uttar Pradesh",
+      "industry": "Fast-food restaurant chain, FMCG sector",
+      "description": "Indian multinational fast-food restaurant chain specializing in a diverse range of sweets, snacks, and culinary delights.",
+      "products": [
+        "gulab jamun",
+        "Bikaneri bhujia",
+        "papadam",
+        "namkeens",
+        "western snacks",
+        "Indian traditional and contemporary sweets",
+        "cookies",
+        "sherbets",
+        "pickles",
+        "ready-to-eat food"
+      ],
+      "services": "Not specified"
+    }
+  },
+  {
+    "company": "Ola",
+    "website": "https://www.olacabs.com",
+    "description": "Ola Cabs offers to book cabs nearby your location for best fares. For best taxi service at lowest fares, say Ola!",
+    "hiring": true,
+    "funding_signal": 0.0,
+    "expansion_signal": 0.5,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "Ola",
+      "founded_year": null,
+      "employees_count": "A large number of people",
+      "headquarters": "India",
+      "industry": "Ride-hailing and electric vehicle manufacturing",
+      "description": "Ola operates a mobile technology platform for city transportation, offering customers the ability to book a range of cabs through its mobile application. In addition, Ola sells high-performance electric vehicles (EV) scooters and bikes.",
+      "products": [
+        "High-performance electric vehicles (scooters and bikes)"
+      ],
+      "services": [
+        "Ride-hailing services"
+      ]
+    }
+  },
+  {
+    "company": "Paytm",
+    "website": "https://paytm.com",
+    "description": "Send money with UPI using any bank account. Recharge mobile and pay bills.",
+    "hiring": true,
+    "funding_signal": 0.0,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.5,
+    "structured_info": {
+      "company_name": "Paytm",
+      "founded_year": "2010",
+      "employees_count": "28,107",
+      "headquarters": "Noida, India",
+      "industry": "Financial Software",
+      "description": "Indian multinational financial technology company specializing in digital payments and financial services.",
+      "products": [
+        "Mobile payment services",
+        "QR code payment",
+        "Soundbox",
+        "Android-based payment terminal"
+      ],
+      "services": [
+        "Payments",
+        "Recharges",
+        "Financial services",
+        "Travel services",
+        "Business services"
+      ]
+    }
+  },
+  {
+    "company": "PhonePe",
+    "website": "https://www.phonepe.com",
+    "description": "PhonePe is a Digital Wallet & Online Payment App that allows you to make instant Money Transfers with UPI. Recharge Mobile, DTH, Pay Utility Bills, Buy/Invest in Gold, Mutual Funds, Insurance & much more.",
+    "hiring": true,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.5,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "PhonePe",
+      "founded_year": "2015",
+      "employees_count": null,
+      "headquarters": "Bengaluru, Karnataka, India",
+      "industry": "Financial Services and Technology",
+      "description": "A leading digital wallet and online payment app based in India.",
+      "products": [
+        "Digital Wallet",
+        "Instant Money Transfers",
+        "Mobile Recharge",
+        "DTH Payments",
+        "Utility Bill Payments",
+        "Gold Buying/Investing",
+        "Mutual Funds",
+        "Insurance"
+      ],
+      "services": [
+        "Online Payment App",
+        "Financial Services like Insurance, Lending, and Wealth",
+        "New Consumer Tech Businesses such as Pincode, Share.Market, and the Indus Appstore"
+      ]
+    }
+  },
+  {
+    "company": "PolicyBazaar",
+    "website": "https://www.policybazaar.com",
+    "description": "No description available",
+    "hiring": true,
+    "funding_signal": 0.75,
+    "expansion_signal": 0.0,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "PolicyBazaar",
+      "founded_year": "2008",
+      "employees_count": "over 24,000",
+      "headquarters": "Gurgaon, India",
+      "industry": "Insurance Brokers",
+      "description": "Online platform offering a wide range of life insurance and general insurance plans to individual buyers.",
+      "products": [
+        "Life Insurance Plans",
+        "General Insurance Plans"
+      ],
+      "services": [
+        "Insurance Broker Services"
+      ]
+    }
+  },
+  {
+    "company": "Razorpay",
+    "website": "https://razorpay.com",
+    "description": "Razorpay is India’s leading full-stack payment solution, enabling businesses to accept, process, and disburse payments instantly. From credit and debit cards to UPI, netbanking, and wallets, Razorpay supports all major payment methods in a secure and seamless platform.",
+    "hiring": true,
+    "funding_signal": 0.0,
+    "expansion_signal": 0.5,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "Razorpay",
+      "founded_year": "2014",
+      "employees_count": "Not specified",
+      "headquarters": "Bengaluru, India",
+      "industry": "Fintech",
+      "description": "A full-stack payment solution enabling businesses to accept, process, and disburse payments securely.",
+      "products": [
+        "credit/debit cards, UPI, netbanking, wallets"
+      ],
+      "services": [
+        "managing marketplaces",
+        "automating bank transfers",
+        "collecting recurring payments",
+        "sharing invoices with customers",
+        "availing working capital loans"
+      ]
+    }
+  },
+  {
+    "company": "Rebel Foods",
+    "website": "https://www.rebelfoods.com",
+    "description": "\t\n",
+    "hiring": true,
+    "funding_signal": 0.75,
+    "expansion_signal": 0.25,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "Rebel Foods",
+      "founded_year": "2011",
+      "employees_count": "8,500",
+      "headquarters": "Mumbai, India",
+      "industry": "Restaurants and Bars",
+      "description": "A private company operating in the Restaurants and Bars industry, known for owning and operating brands such as Faasos, Oven Story, and Behrouz Biryani. It operates over 450 cloud kitchens in multiple countries.",
+      "products": null,
+      "services": "Cloud kitchen services"
+    }
+  },
+  {
+    "company": "Swiggy",
+    "website": "https://www.swiggy.com",
+    "description": "No description available",
+    "hiring": true,
+    "funding_signal": 0.0,
+    "expansion_signal": 0.75,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "Swiggy",
+      "founded_year": "2014",
+      "employees_count": "Not specified in provided information",
+      "headquarters": "No. 55, Sy No. 8-14, Ground Floor, I&J Block, Embassy TechVillage, Outer Ring Road, Devarbisanahalli, Bengaluru 560 103, Karnataka, India",
+      "industry": "Online food ordering and delivery",
+      "description": "Indian online food ordering and delivery company operating in over 580 cities across the country as of July 2023.",
+      "products": [
+        "Food delivery from various restaurants"
+      ],
+      "services": [
+        "Grocery delivery"
+      ]
+    }
+  },
+  {
+    "company": "UpGrad",
+    "website": "https://www.upgrad.com",
+    "description": "upGrad®, Choose from top online programs in AI, Data Science, MBA, Marketing, Tech. ✔ Trusted by 100+Academic & Industry Partners ✔ Career support ✔ Flexible learning.",
+    "hiring": true,
+    "funding_signal": 0.75,
+    "expansion_signal": 0.25,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "upGrad",
+      "founded_year": "2015",
+      "employees_count": "4,000",
+      "headquarters": "Mumbai, India",
+      "industry": "Educational Software",
+      "description": "A private company operating within the online education sector, offering various online programs focusing on AI, Data Science, MBA, Marketing, Tech, and other related fields.",
+      "products": [
+        "Online Education Programs"
+      ],
+      "services": [
+        "Career Support",
+        "Flexible Learning Options",
+        "Industry Insights",
+        "Student Support Services"
+      ]
+    }
+  },
+  {
+    "company": "UrbanClap",
+    "website": "https://www.urbanclap.com",
+    "description": "Urban Company is your one-stop destination to get trusted and expert professionals near you right at your doorstep, covering all your home services, home repair, and beauty needs.",
+    "hiring": true,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.5,
+    "negative_signal": 0.0,
+    "structured_info": {
+      "company_name": "Urban Company",
+      "founded_year": "2014",
+      "employees_count": "1370",
+      "headquarters": "Plot No 19, Sewa Tower, 5th Floor, Anath Road, Sector 18, Gurgaon, Haryana, India",
+      "industry": "Home Services",
+      "description": "Urban Company is an Indian home services provider that connects individuals with professionals for various home services such as home repair, beauty needs, and other home services.",
+      "products": null,
+      "services": "web and app-based marketplace for hiring local housekeeping and personal services"
+    }
+  },
+  {
+    "company": "Zepto",
+    "website": "https://www.zepto.com",
+    "description": "Zepto is your next-door quick commerce app, delivering online groceries,fruits,vegetables, personal care, electronics & much more to you in just minutes.",
+    "hiring": true,
+    "funding_signal": 1.0,
+    "expansion_signal": 0.5,
+    "negative_signal": 0.2,
+    "structured_info": {
+      "company_name": "Zepto",
+      "founded_year": "2021",
+      "employees_count": "Not specified",
+      "headquarters": "Bengaluru, India",
+      "industry": "Quick-commerce",
+      "description": "Indian quick-commerce company delivering a variety of goods within minutes.",
+      "products": [
+        "groceries, fruits, vegetables, personal care items, electronics"
+      ],
+      "services": "Not specified"
+    }
+  },
+  {
+    "company": "Zomato",
+    "website": "https://www.zomato.com",
+    "description": "Indiaâs largest Food Delivery, Dining and Restaurant Discovery Service. Better food for more people.",
+    "hiring": false,
+    "funding_signal": 0.0,
+    "expansion_signal": 0.25,
+    "negative_signal": 0.5,
+    "structured_info": {
+      "company_name": "Zomato",
+      "founded_year": "2008",
+      "employees_count": "Not specified",
+      "headquarters": "India",
+      "industry": "Food-tech",
+      "description": "Online food ordering and delivery service, restaurant discovery, table reservation.",
+      "products": [
+        "Food delivery",
+        "Table reservation",
+        "Restaurant discovery"
+      ],
+      "services": [
+        "Menu information",
+        "Photos",
+        "Ratings",
+        "Reviews",
+        "Discounts and deals"
+      ]
+    }
+  }
+]

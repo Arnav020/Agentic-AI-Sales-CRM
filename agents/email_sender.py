@@ -321,15 +321,26 @@ class CompleteEmailSystem:
             f"The contact replied:\nFrom: {sender}\nSubject: {subject}\n\n{body}\n\n"
             f"Write a professional, concise HTML reply (2–4 short paragraphs)."
         )
+
         generated = self._gemini_generate_with_backoff(prompt)
+
         if generated:
-            return generated
+            # 🧹 Clean Gemini prefixes/suffixes
+            cleaned = re.sub(r"^(`{3,}|'''|```html|'''html)\s*", "", generated.strip(), flags=re.IGNORECASE)
+            cleaned = re.sub(r"(`{3,}|'''|</?html>|</?body>)\s*$", "", cleaned.strip(), flags=re.IGNORECASE)
+            # If model returned plain text accidentally, wrap it in <p>...</p>
+            if not bool(re.search(r"<\s*p|<\s*div|<\s*br|<\s*table", cleaned, re.I)):
+                cleaned = f"<p>{cleaned}</p>"
+            return cleaned
+
+        # fallback generic HTML
         return (
             f"<p>Thank you for your response.</p>"
             f"<p>I appreciate your reply — I’ll review and follow up shortly.</p>"
             f"<p>Best regards,<br>{self.comm.get('sender_name')}<br>{self.comm.get('sender_designation')} | {self.company.get('name')}<br>"
             f"<a href='mailto:{self.comm.get('sender_email')}'>{self.comm.get('sender_email')}</a></p>"
         )
+
 
     def send_reply(self, original_email, reply_html):
         try:
