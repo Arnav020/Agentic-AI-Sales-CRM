@@ -2,7 +2,8 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pathlib import Path
 from backend.agents.email_sender import CompleteEmailSystem
-from backend.db.mongo import mongo_save_result as save_to_mongo
+from backend.db.mongo import save_user_output
+from datetime import datetime
 import traceback
 
 router = APIRouter()
@@ -12,6 +13,11 @@ USERS_DIR = BASE / "users"
 
 @router.post("/{user_id}/run")
 def run_campaign(user_id: str, background: bool = True, bt: BackgroundTasks = None):
+    """
+    Trigger an email campaign for the given user.
+    - Runs CompleteEmailSystem(user_root)
+    - Saves summary in user_outputs (unified schema)
+    """
     user_path = USERS_DIR / user_id
     if not user_path.exists():
         raise HTTPException(status_code=404, detail="User not found")
@@ -20,22 +26,29 @@ def run_campaign(user_id: str, background: bool = True, bt: BackgroundTasks = No
         try:
             system = CompleteEmailSystem(user_root=str(user_path))
             ok = system.send_bulk_emails()
-            # write a summary doc to mongo (redundant with agent, but convenient for API)
-            save_to_mongo("email_sender", {
-                "user_id": user_id,
-                "type": "campaign_triggered_via_api",
-                "timestamp": system and __import__("datetime").datetime.utcnow(),
-                "status": "ok" if ok else "failed",
-            })
+
+            # Unified Mongo persistence
+            save_user_output(
+                user_id=user_id,
+                agent="email_sender",
+                output_type="campaign_triggered_via_api",
+                data={
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": "ok" if ok else "failed",
+                },
+            )
         except Exception as e:
-            save_to_mongo("email_sender", {
-                "user_id": user_id,
-                "type": "campaign_triggered_via_api",
-                "timestamp": __import__("datetime").datetime.utcnow(),
-                "status": "error",
-                "error": str(e),
-                "trace": traceback.format_exc(),
-            })
+            save_user_output(
+                user_id=user_id,
+                agent="email_sender",
+                output_type="campaign_triggered_via_api",
+                data={
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": "error",
+                    "error": str(e),
+                    "trace": traceback.format_exc(),
+                },
+            )
 
     if background:
         if bt is None:
@@ -50,6 +63,10 @@ def run_campaign(user_id: str, background: bool = True, bt: BackgroundTasks = No
 
 @router.post("/{user_id}/start_autoreply")
 def start_autoreply(user_id: str, bt: BackgroundTasks, check_interval: int = 180):
+    """
+    Starts Gemini auto-reply monitoring loop for the user.
+    Runs continuously in background via FastAPI BackgroundTasks.
+    """
     user_path = USERS_DIR / user_id
     if not user_path.exists():
         raise HTTPException(status_code=404, detail="User not found")

@@ -36,13 +36,6 @@ MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 project_root = Path(__file__).resolve().parents[1]  # backend/
 load_dotenv(project_root / ".env")
 
-# Safe import of Mongo helper
-try:
-    from backend.db.mongo import save_result as mongo_save_result
-except Exception as e:
-    mongo_save_result = None
-    logging.warning(f"⚠️ Could not import backend.db.mongo.save_result: {e}")
-
 # -----------------------------
 # Helpers
 # -----------------------------
@@ -517,14 +510,6 @@ class ScoringAgent:
             "count": len(results_sorted),
             "results": deepcopy(results_sorted),
         }
-        if mongo_save_result:
-            try:
-                mongo_save_result("lead_scores", doc)
-                logging.info(f"Saved lead scores to MongoDB (user={self.user_id}, count={len(results_sorted)})")
-            except Exception as e:
-                logging.exception(f"Mongo save failed: {e}")
-        else:
-            logging.warning("Mongo helper unavailable; skipping Mongo persistence.")
 
         # Timestamped JSON backup for traceability
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

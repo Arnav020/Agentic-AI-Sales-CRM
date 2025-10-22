@@ -35,7 +35,6 @@ import google.generativeai as genai
 
 # Local helpers
 from backend.utils.generate_token import generate_token
-from backend.db.mongo import mongo_save_result as save_to_mongo
 from backend.db.mongo import save_user_output
 
 
@@ -399,13 +398,22 @@ class CompleteEmailSystem:
                     self.mark_as_read(msg_id)
                     self.processed_emails.add(msg_id)
                     self._save_processed_emails()
-                    save_to_mongo("email_sender", {
-                        "user_id": self.user_root.name,
-                        "type": "auto_reply",
-                        "sender": sender,
-                        "subject": email.get("subject"),
-                        "timestamp": datetime.utcnow(),
-                    })
+                    try:
+                        user_id = self.user_root.name if self.user_root else "unknown"
+                        save_user_output(
+                            user_id=user_id,
+                            agent="email_sender",
+                            output_type="auto_reply",
+                            data={
+                                "sender": sender,
+                                "subject": email.get("subject"),
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
+                        )
+                        self.logger.info(f"Saved auto-reply metadata to user_outputs (user={user_id})")
+                    except Exception:
+                        self.logger.exception("Failed to save auto-reply metadata to user_outputs")
+
                 time.sleep(check_interval)
         except KeyboardInterrupt:
             self.logger.info("Auto-reply monitor stopped.")
@@ -437,20 +445,14 @@ class CompleteEmailSystem:
             time.sleep(2)
         self.logger.info(f"Campaign complete — Sent {sent}, Failed {failed}")
 
-        save_to_mongo("email_sender", {
-            "user_id": self.user_root.name,
-            "type": "campaign",
-            "timestamp": datetime.utcnow(),
-            "sent": sent,
-            "failed": failed,
-            "recipients": recips,
-        })
-
         try:
             user_id = self.user_root.name
-            save_user_output(user_id=user_id, agent="email_sender",
-                             output_type="campaign_summary",
-                             data={"sent": sent, "failed": failed, "recipients": recips})
+            save_user_output(
+                user_id=user_id, 
+                agent="email_sender",
+                output_type="campaign_summary",
+                data={"sent": sent, "failed": failed, "recipients": recips}
+            )
             self.logger.info("Saved campaign summary to user_outputs (mongo)")
         except Exception:
             self.logger.exception("Failed to save campaign summary to user_outputs")

@@ -22,30 +22,6 @@ client = MongoClient(MONGO_URI)
 db = client["agentic_crm"]
 
 # ======================================================
-# 🧩 Legacy (agent-level) helper functions
-# ======================================================
-def mongo_save_result(collection: str, data: dict):
-    """Legacy: insert a document for an agent-level collection (keeps old behavior)."""
-    payload = dict(data)  # shallow copy
-    payload.setdefault("timestamp", datetime.utcnow())
-    db[collection].insert_one(payload)
-
-# alias for older code that used save_result
-save_result = mongo_save_result
-
-
-def get_results(collection: str, query: dict = None, limit: int = 50):
-    """Fetch latest documents from a collection."""
-    query = query or {}
-    return list(db[collection].find(query).sort("timestamp", -1).limit(limit))
-
-
-def clear_collection(collection: str):
-    """Delete all documents in a collection (testing only)."""
-    db[collection].delete_many({})
-
-
-# ======================================================
 # 🧱 User-centric helpers (new structure)
 # ======================================================
 def save_user_input(user_id: str, input_type: str, data: dict):

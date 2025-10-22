@@ -96,14 +96,6 @@ class EnrichmentAgent:
             # fallback to default load_dotenv behavior
             load_dotenv()
 
-        # dynamic import of mongo helper after .env is loaded so mongo.py sees correct env
-        try:
-            from backend.db.mongo import save_result as mongo_save_result
-            self._mongo_save = mongo_save_result
-        except Exception as e:
-            # If mongo import fails, continue but set None and log later when using.
-            self._mongo_save = None
-            logging.warning(f"Could not import backend.db.mongo.save_result: {e}")
 
         # define user_root
         if user_root:
@@ -392,16 +384,6 @@ class EnrichmentAgent:
             "results": final_results
         }
 
-        # Attempt Mongo write (non-fatal)
-        if self._mongo_save:
-            try:
-                # save_result inserts the record and also adds timestamp inside mongo.py
-                self._mongo_save("enriched_companies", doc)
-                logging.info(f"Saved enrichment results to Mongo collection 'enriched_companies' (user={self.user_id}, count={len(final_results)})")
-            except Exception as e:
-                logging.exception(f"Mongo save failed: {e}")
-        else:
-            logging.warning("Mongo helper not available; skipping Mongo persistence.")
 
         # Always write a timestamped backup file in the user's outputs directory
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

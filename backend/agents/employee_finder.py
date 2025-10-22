@@ -23,7 +23,6 @@ import requests
 from datetime import datetime
 
 # Import MongoDB helper (backend integration)
-from backend.db.mongo import mongo_save_result
 from backend.db.mongo import save_user_output
 
 
@@ -341,25 +340,13 @@ class SalesEmployeeFinder:
 
         # --- Save to MongoDB ---
         try:
-            doc = {
-                "user_id": self.user_root.name,
-                "created_at": datetime.utcnow(),
-                "count": len(results),
-                "results": results,
-            }
-            mongo_save_result("employee_finder", doc)
-            logging.info(f"Saved employee results to MongoDB (user={self.user_root.name}, count={len(results)})")
-        except Exception as e:
-            logging.error(f"Mongo save failed: {e}")
-            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            backup_path = self.outputs_dir / f"employee_backup_{ts}.json"
-            with open(backup_path, "w", encoding="utf-8") as f:
-                json.dump(results, f, indent=2, ensure_ascii=False)
-            logging.info(f"Backup JSON saved → {backup_path}")
-
-        try:
             user_id = self.user_root.name if self.user_root else "unknown"
-            save_user_output(user_id=user_id, agent="employee_finder", output_type="employees_companies", data={"results": results})
+            save_user_output(
+                user_id=user_id, 
+                agent="employee_finder", 
+                output_type="employees_companies", 
+                data={"results": results}
+            )
             logging.info("Saved employee finder results to user_outputs (mongo)")
         except Exception:
             logging.exception("Failed to save employee finder results to user_outputs")

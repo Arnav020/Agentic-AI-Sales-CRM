@@ -22,6 +22,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 from datetime import datetime
+from backend.db.mongo import save_user_output
 
 # =====================
 # Load env (keeps original behavior but we will also load backend/.env in the agent)
@@ -34,15 +35,6 @@ load_dotenv()
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2
 API_BASE = "https://api.verifalia.com/v2.7"
-
-# =====================
-# Attempt to import mongo helper (backend integration)
-# =====================
-try:
-    from backend.db.mongo import mongo_save_result as save_to_mongo
-except Exception:
-    save_to_mongo = None
-
 
 # =====================
 # Data Model
@@ -353,39 +345,15 @@ class ContactFinderAgent:
         print(f"✅ Email verification complete. {verified_count} verified, {skipped_count} skipped.")
         print(f"Results saved to {output_json}")
 
-        # --- Persist to MongoDB (non-fatal) ---
-        try:
-            doc = {
-                "agent_name": "contact_finder",
-                "user_id": self.user_root.name,
-                "correlation_id": str(uuid.uuid4()),
-                "created_at": datetime.utcnow(),
-                "count": len(data),
-                "results": data,
-            }
-            if save_to_mongo:
-                save_to_mongo("contact_finder", doc)
-                self.logger.info(f"Saved contact verification results to MongoDB (user={self.user_root.name}, count={len(data)})")
-            else:
-                self.logger.warning("Mongo helper not available; skipping Mongo persistence.")
-        except Exception as e:
-            self.logger.exception(f"Mongo save failed: {e}")
-            # Fallback: write a timestamped backup file
-            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            backup_path = self.outputs_dir / f"contact_finder_backup_{ts}.json"
-            try:
-                with open(backup_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                self.logger.info(f"Backup JSON saved → {backup_path}")
-            except Exception as ex:
-                self.logger.exception(f"Failed to write backup JSON: {ex}")
-
-        from backend.db.mongo import save_user_output
-
         # after writing output_json
         try:
             user_id = self.user_root.name if self.user_root else "unknown"
-            save_user_output(user_id=user_id, agent="contact_finder", output_type="employees_email", data={"results": data})
+            save_user_output(
+                user_id=user_id, 
+                agent="contact_finder", 
+                output_type="employees_email", 
+                data={"results": data}
+            )
             self.logger.info("Saved contact_finder results to user_outputs (mongo)")
         except Exception:
             self.logger.exception("Failed to save contact_finder results to user_outputs")
