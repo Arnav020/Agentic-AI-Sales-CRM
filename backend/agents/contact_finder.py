@@ -6,6 +6,7 @@ Multi-user compatible Agentic CRM Contact Finder
 - Logs to users/<user_id>/logs/contact_finder.log
 - Uses up to 3 Verifalia accounts sequentially
 - Keeps full core logic unchanged
+- Adds MongoDB persistence (collection: contact_finder)
 """
 
 import time
@@ -14,18 +15,18 @@ import base64
 import json
 import os
 import re
+import uuid
 from typing import List, Dict
 from dataclasses import dataclass
 from pathlib import Path
 import requests
 from dotenv import load_dotenv
-
+from datetime import datetime
 
 # =====================
-# Load env
+# Load env (keeps original behavior but we will also load backend/.env in the agent)
 # =====================
 load_dotenv()
-
 
 # =====================
 # Config
@@ -33,6 +34,14 @@ load_dotenv()
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2
 API_BASE = "https://api.verifalia.com/v2.7"
+
+# =====================
+# Attempt to import mongo helper (backend integration)
+# =====================
+try:
+    from backend.db.mongo import mongo_save_result as save_to_mongo
+except Exception:
+    save_to_mongo = None
 
 
 # =====================
@@ -200,7 +209,15 @@ class VerifaliaVerifier:
 # =====================
 class ContactFinderAgent:
     def __init__(self, user_root: str = None):
-        self.project_root = Path(__file__).resolve().parents[1]
+        # ensure backend .env is loaded (robust when cwd changes)
+        project_root = Path(__file__).resolve().parents[1]
+        try:
+            load_dotenv(project_root / ".env")
+        except Exception:
+            # fallback to default load_dotenv
+            load_dotenv()
+
+        self.project_root = project_root
         self.user_root = Path(user_root) if user_root else self.project_root
 
         self.inputs_dir = self.user_root / "inputs"
@@ -236,7 +253,6 @@ class ContactFinderAgent:
 
         logger.info(f"Logging initialized for ContactFinder → {self.log_file}")
         return logger
-
 
     def run(self):
         input_json = self.outputs_dir / "employees_companies.json"
@@ -337,6 +353,44 @@ class ContactFinderAgent:
         print(f"✅ Email verification complete. {verified_count} verified, {skipped_count} skipped.")
         print(f"Results saved to {output_json}")
 
+        # --- Persist to MongoDB (non-fatal) ---
+        try:
+            doc = {
+                "agent_name": "contact_finder",
+                "user_id": self.user_root.name,
+                "correlation_id": str(uuid.uuid4()),
+                "created_at": datetime.utcnow(),
+                "count": len(data),
+                "results": data,
+            }
+            if save_to_mongo:
+                save_to_mongo("contact_finder", doc)
+                self.logger.info(f"Saved contact verification results to MongoDB (user={self.user_root.name}, count={len(data)})")
+            else:
+                self.logger.warning("Mongo helper not available; skipping Mongo persistence.")
+        except Exception as e:
+            self.logger.exception(f"Mongo save failed: {e}")
+            # Fallback: write a timestamped backup file
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            backup_path = self.outputs_dir / f"contact_finder_backup_{ts}.json"
+            try:
+                with open(backup_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                self.logger.info(f"Backup JSON saved → {backup_path}")
+            except Exception as ex:
+                self.logger.exception(f"Failed to write backup JSON: {ex}")
+
+        from backend.db.mongo import save_user_output
+
+        # after writing output_json
+        try:
+            user_id = self.user_root.name if self.user_root else "unknown"
+            save_user_output(user_id=user_id, agent="contact_finder", output_type="employees_email", data={"results": data})
+            self.logger.info("Saved contact_finder results to user_outputs (mongo)")
+        except Exception:
+            self.logger.exception("Failed to save contact_finder results to user_outputs")
+
+
 
 # =====================
 # Runner / Entrypoint for both Orchestrator and Standalone use
@@ -367,4 +421,3 @@ if __name__ == "__main__":
         user_folder = None
 
     main(user_folder)
-

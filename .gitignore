@@ -53,4 +53,5 @@ coverage/
 credentials.json
 token.json
 Email Logs/
+logs/
 

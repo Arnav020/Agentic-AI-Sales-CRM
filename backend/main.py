@@ -50,7 +50,9 @@ def list_agents():
 def run_agent(agent_name: str, user_folder: Path):
     """Import and execute a specific agent for a user."""
     print(f"\n🚀 Running {agent_name}.py for user → {user_folder.name}")
-    module_path = f"agents.{agent_name}"
+
+    # Force backend-based import so it always works when run as 'python -m backend.main'
+    module_path = f"backend.agents.{agent_name}"
 
     try:
         module = importlib.import_module(module_path)

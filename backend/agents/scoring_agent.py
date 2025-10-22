@@ -1,11 +1,12 @@
 # agents/scoring_agent.py
 """
-Multi-user compatible Scoring Agent
------------------------------------
+Multi-user compatible Scoring Agent with MongoDB integration
+------------------------------------------------------------
 - Reads inputs/outputs per user under /users/<user_id>/.
 - Keeps the original scoring logic unchanged.
-- Adds per-user logging in /users/<user_id>/logs/scoring_agent.log.
-- Can be run standalone or from main.py with a user argument.
+- Saves top-N scored companies to MongoDB (collection: lead_scores).
+- Writes JSON backups under /users/<user_id>/outputs/.
+- Loads backend/.env automatically for MongoDB connection.
 """
 
 import json
@@ -13,13 +14,34 @@ import os
 import re
 import math
 import logging
+import uuid
 from typing import List, Dict
 from pathlib import Path
+from datetime import datetime
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 from difflib import SequenceMatcher
+from backend.db.mongo import save_user_output
 
+# -----------------------------
+# Constants
+# -----------------------------
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
+# -----------------------------
+# Mongo setup
+# -----------------------------
+# Ensure .env loaded from backend
+project_root = Path(__file__).resolve().parents[1]  # backend/
+load_dotenv(project_root / ".env")
+
+# Safe import of Mongo helper
+try:
+    from backend.db.mongo import save_result as mongo_save_result
+except Exception as e:
+    mongo_save_result = None
+    logging.warning(f"⚠️ Could not import backend.db.mongo.save_result: {e}")
 
 # -----------------------------
 # Helpers
@@ -129,7 +151,7 @@ class ScoringAgent:
     def __init__(self, user_root: str = None):
         """
         user_root: Path to user's folder (e.g., users/user_demo).
-        If None, defaults to repo-level inputs/outputs for backward compatibility.
+        If None, defaults to backend/ for backward compatibility.
         """
         self.project_root = Path(__file__).resolve().parents[1]
         if user_root:
@@ -137,14 +159,18 @@ class ScoringAgent:
         else:
             self.user_root = self.project_root
 
-        # Define per-user directories
+        # Normalize and ensure per-user directories
+        if "users" in str(self.user_root):
+            self.user_id = self.user_root.name
+        else:
+            self.user_id = "default_user"
         self.inputs_dir = self.user_root / "inputs"
         self.outputs_dir = self.user_root / "outputs"
         self.logs_dir = self.user_root / "logs"
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Configure per-user logging
+        # Configure logging
         self.log_file = self.logs_dir / "scoring_agent.log"
         self._setup_logging()
 
@@ -230,7 +256,7 @@ class ScoringAgent:
                 kws.add(normalize(ex))
         return sorted(kws)
 
-    # -----------------------------
+# -----------------------------
     # Rest of logic stays EXACTLY the same (scoring logic untouched)
     # -----------------------------
     def extract_keywords(self, company: Dict) -> List[str]:
@@ -468,17 +494,61 @@ class ScoringAgent:
         results = [self.score_company(c) for c in self.companies]
         return sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
 
-    # -----------------------------
     def run(self, top_n=50):
+        """Run scoring, persist results to JSON + MongoDB."""
         logging.info("🚀 Starting scoring process...")
-        results = self.rank_companies(top_n=top_n)
+        from copy import deepcopy
+
+        # reuse original rank_companies logic
+        results = [self.score_company(c) for c in self.companies]
+        results_sorted = sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
+
+        # canonical JSON save
         with open(self.output_file, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-        logging.info(f"✅ Scoring complete. Saved {len(results)} results → {self.output_file}")
-        print(f"✅ Scoring complete. Saved {len(results)} results to {self.output_file}")
+            json.dump(results_sorted, f, indent=2, ensure_ascii=False)
+        logging.info(f"✅ Scoring complete. Saved {len(results_sorted)} results → {self.output_file}")
+
+        # MongoDB persistence
+        correlation_id = str(uuid.uuid4())
+        doc = {
+            "user_id": self.user_id,
+            "correlation_id": correlation_id,
+            "created_at": datetime.utcnow(),
+            "count": len(results_sorted),
+            "results": deepcopy(results_sorted),
+        }
+        if mongo_save_result:
+            try:
+                mongo_save_result("lead_scores", doc)
+                logging.info(f"Saved lead scores to MongoDB (user={self.user_id}, count={len(results_sorted)})")
+            except Exception as e:
+                logging.exception(f"Mongo save failed: {e}")
+        else:
+            logging.warning("Mongo helper unavailable; skipping Mongo persistence.")
+
+        # Timestamped JSON backup for traceability
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        backup_path = self.outputs_dir / f"lead_scores_{ts}.json"
+        try:
+            with open(backup_path, "w", encoding="utf-8") as f:
+                json.dump(doc, f, indent=2, ensure_ascii=False, default=str)
+            logging.info(f"Backup JSON saved → {backup_path}")
+        except Exception as e:
+            logging.exception(f"Failed to write backup JSON: {e}")
+
+        # after saving JSON
+        try:
+            user_id = self.user_root.name if self.user_root else "unknown"
+            save_user_output(user_id=user_id, agent="scoring_agent", output_type="scored_companies", data={"results": results})
+            logging.info("Saved scored_companies to user_outputs (mongo)")
+        except Exception:
+            logging.exception("Failed to save scored companies to user_outputs")
+
+        print(f"✅ Scoring complete. Saved {len(results_sorted)} results to {self.output_file}")
+        return results_sorted
 
 # -----------------------------
-# Runner / Entrypoint for both Orchestrator and Standalone use
+# Runner / Entrypoint
 # -----------------------------
 def main(user_folder: str | None = None):
     """
@@ -504,6 +574,4 @@ if __name__ == "__main__":
         user_folder = str(Path("users") / user_arg)
     else:
         user_folder = None
-
     main(user_folder)
-

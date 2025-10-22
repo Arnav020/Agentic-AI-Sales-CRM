@@ -1,4 +1,4 @@
-# agents/enrichment_agent.py
+# backend/agents/enrichment_agent.py
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
@@ -9,9 +9,12 @@ import time
 import ast
 import logging
 import random
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import datetime
+from backend.db.mongo import save_user_output
 
 # -----------------------------
 # Configuration (unchanged behaviour)
@@ -79,17 +82,43 @@ def clean_company_record(company):
 class EnrichmentAgent:
     def __init__(self, user_root: str = None, model: str = "mistral:latest", max_workers: int = MAX_WORKERS):
         """
-        user_root: Path to the user's folder (e.g. users/user_demo). If None, falls back to repo root.
+        user_root: Path to the user's folder (e.g. users/user_demo). If None, falls back to backend/ (single-tenant).
         model: Ollama/Mistral model string (keeps existing behavior).
         """
-        # define project root and user_root
+        # define project root (backend/)
+        # file is agents/enrichment_agent.py so parents[1] -> backend/
         self.project_root = Path(__file__).resolve().parents[1]
+
+        # Ensure we load the backend .env explicitly so Mongo and other modules get correct env values.
+        try:
+            load_dotenv(self.project_root / ".env")
+        except Exception:
+            # fallback to default load_dotenv behavior
+            load_dotenv()
+
+        # dynamic import of mongo helper after .env is loaded so mongo.py sees correct env
+        try:
+            from backend.db.mongo import save_result as mongo_save_result
+            self._mongo_save = mongo_save_result
+        except Exception as e:
+            # If mongo import fails, continue but set None and log later when using.
+            self._mongo_save = None
+            logging.warning(f"Could not import backend.db.mongo.save_result: {e}")
+
+        # define user_root
         if user_root:
             self.user_root = Path(user_root)
         else:
             # fallback: use project root for older single-tenant behavior
             self.user_root = self.project_root
 
+        # normalize user_root if it's just a username (like "user_demo")
+        # ensure it's a path like backend/users/<user>
+        if self.user_root.name and self.user_root.exists() is False and str(self.user_root).startswith("users"):
+            # likely passed "users/<user>" relative; make absolute relative to project_root
+            self.user_root = (self.project_root / self.user_root)
+
+        # If still pointing to backend/ (single-tenant), that's acceptable.
         # define per-user directories
         self.inputs_dir = (self.user_root / "inputs")
         self.outputs_dir = (self.user_root / "outputs")
@@ -97,6 +126,25 @@ class EnrichmentAgent:
         # ensure directories exist
         for d in (self.inputs_dir, self.outputs_dir, self.logs_dir):
             d.mkdir(parents=True, exist_ok=True)
+
+        # derive a user id for multi-tenant documents (use folder name if present)
+        try:
+            # If user_root is like backend/users/user_demo -> take user_demo
+            if self.user_root.parts and "users" in self.user_root.parts:
+                # find index of 'users' and pick next segment as user id
+                parts = list(self.user_root.parts)
+                if "users" in parts:
+                    idx = parts.index("users")
+                    if idx + 1 < len(parts):
+                        self.user_id = parts[idx + 1]
+                    else:
+                        self.user_id = "default_user"
+                else:
+                    self.user_id = self.user_root.name or "default_user"
+            else:
+                self.user_id = self.user_root.name or "default_user"
+        except Exception:
+            self.user_id = "default_user"
 
         # logging per-user
         self.log_file = self.logs_dir / "enrichment_agent.log"
@@ -114,7 +162,6 @@ class EnrichmentAgent:
         )
 
         # Ollama / Mistral setup from original script
-        load_dotenv()
         self.USE_OLLAMA = True
         self.OLLAMA_MODEL = model
         if self.USE_OLLAMA:
@@ -329,6 +376,53 @@ class EnrichmentAgent:
         }
 
     # -----------------------------
+    # Persistence helper (Mongo + JSON backup)
+    # -----------------------------
+    def _persist_final_results(self, final_results: list, correlation_id: str):
+        """
+        Persist final_results (list of cleaned company records) to MongoDB and write JSON backups.
+        Each run is inserted as a single document into 'enriched_companies' with metadata.
+        """
+        timestamp = datetime.utcnow().isoformat()
+        doc = {
+            "user_id": self.user_id,
+            "correlation_id": correlation_id,
+            "created_at": timestamp,
+            "count": len(final_results),
+            "results": final_results
+        }
+
+        # Attempt Mongo write (non-fatal)
+        if self._mongo_save:
+            try:
+                # save_result inserts the record and also adds timestamp inside mongo.py
+                self._mongo_save("enriched_companies", doc)
+                logging.info(f"Saved enrichment results to Mongo collection 'enriched_companies' (user={self.user_id}, count={len(final_results)})")
+            except Exception as e:
+                logging.exception(f"Mongo save failed: {e}")
+        else:
+            logging.warning("Mongo helper not available; skipping Mongo persistence.")
+
+        # Always write a timestamped backup file in the user's outputs directory
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        backup_file = self.outputs_dir / f"enriched_companies_{ts}.json"
+        try:
+            with backup_file.open("w", encoding="utf-8") as f:
+                json.dump(doc, f, indent=2, ensure_ascii=False, default=str)
+            logging.info(f"Wrote JSON backup to {backup_file}")
+        except Exception as e:
+            logging.exception(f"Failed to write backup JSON to {backup_file}: {e}")
+
+        # Also keep the canonical filename for downstream consumers (overwrites)
+        canonical_file = self.outputs_dir / "enriched_companies.json"
+        try:
+            with canonical_file.open("w", encoding="utf-8") as f:
+                json.dump(final_results, f, indent=2, ensure_ascii=False, default=str)
+            logging.info(f"Wrote canonical output to {canonical_file}")
+        except Exception as e:
+            logging.exception(f"Failed to write canonical output to {canonical_file}: {e}")
+
+    # -----------------------------
     # High-level run method (keeps original behaviour)
     # -----------------------------
     def run(self):
@@ -371,14 +465,24 @@ class EnrichmentAgent:
             except Exception as e:
                 logging.error(f"❌ LLM enrich failed for {r.get('company')}: {e}")
 
-        # write outputs to user's outputs dir
-        out_file = self.outputs_dir / "enriched_companies.json"
+        # generate correlation id for this run
+        correlation_id = str(uuid.uuid4())
+
+        # Persist results (Mongo + JSON backup) via helper
         try:
-            with out_file.open("w", encoding="utf-8") as f:
-                json.dump(final_results, f, indent=2, ensure_ascii=False)
-            logging.info(f"✅ Done. Cleaned and saved {len(final_results)} companies to {out_file}")
+            self._persist_final_results(final_results, correlation_id)
+            logging.info(f"✅ Done. Cleaned and saved {len(final_results)} companies (correlation_id={correlation_id})")
         except Exception as e:
-            logging.error(f"Failed to write output to {out_file}: {e}")
+            logging.exception(f"Unexpected error while persisting results: {e}")
+
+        # inside run(), after writing out_file and logging:
+        try:
+            # store full results per user
+            user_id = self.user_root.name if self.user_root else "unknown"
+            save_user_output(user_id=user_id, agent="enrichment_agent", output_type="enriched_companies", data={"results": final_results})
+            logging.info("Saved enriched_companies to user_outputs (mongo)")
+        except Exception as e:
+            logging.exception(f"Failed to save enriched companies to user_outputs: {e}")
 
 # -----------------------------
 # Runner / Entrypoint for both Orchestrator and Standalone use
@@ -408,10 +512,9 @@ if __name__ == "__main__":
     # Allow standalone run: python agents/enrichment_agent.py [user_name]
     user_arg = sys.argv[1] if len(sys.argv) >= 2 else None
     if user_arg:
-        # Build full path like users/<user_arg>
+        # Build full path like users/<user_arg> relative to backend/
         user_folder = str(Path("users") / user_arg)
     else:
         user_folder = None
 
     main(user_folder)
-
