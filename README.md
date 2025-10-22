@@ -30,12 +30,12 @@ Everything is **multi-user, database-backed, and fully API-accessible** — buil
                 │ (backend/main.py CLI Runner)│
                 └──────────────┬──────────────┘
                                │
-        ┌──────────────────────┼──────────────────────┐
-        │                      │                      │
-        ▼                      ▼                      ▼
-  enrichment_agent.py     scoring_agent.py       email_sender.py
-  employee_finder.py      contact_finder.py      (Gemini + Gmail)
-        │                      │                      │
+        ┌──────────────────────┼─────────────────────────────────────┐    
+        │                      │                                     │
+        ▼                      ▼                                     ▼
+  enrichment_agent.py     scoring_agent.py                    email_sender.py
+  employee_finder.py      contact_finder.py                   (Gemini + Gmail)
+        │                      │                                     │
         └──────────► MongoDB (user_inputs / user_outputs) ◄──────────┘
                                │
                      ┌─────────┴─────────┐
