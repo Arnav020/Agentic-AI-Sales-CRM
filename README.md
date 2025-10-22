@@ -200,7 +200,6 @@ python generate_token.py
 ### 3️⃣ Run Agents from CLI
 Example: Run the orchestrator
 ```bash
-cd backend
 python -m backend.main
 ```
 
