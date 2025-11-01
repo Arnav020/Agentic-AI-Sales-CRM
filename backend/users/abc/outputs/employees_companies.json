@@ -1,43 +1,109 @@
 [
   {
     "company": "Biryani Blues",
-    "num_found": 0,
-    "employees": []
+    "num_found": 3,
+    "employees": [
+      {
+        "name": "Aparna Andrews",
+        "title": "Entrepreneur LinkedIn ANISH SINGH LinkedIn India",
+        "linkedin_url": "https://in.linkedin.com/in/aparna-andrews-49aaba5",
+        "email_guess": "aparna.andrews@biryaniblues.com",
+        "confidence": 0.5
+      },
+      {
+        "name": "ANISH SINGH",
+        "title": "LinkedIn India",
+        "linkedin_url": "https://in.linkedin.com/in/anish-singh-25b1a1108",
+        "email_guess": "anish.singh@biryaniblues.com",
+        "confidence": 0.5
+      },
+      {
+        "name": "Benaka Gumbira",
+        "title": "Regional Manager Boba Bhai LinkedIn India Aalok kumar Market Manager GM Ops LinkedIn India mukesh kumar khandelwal LinkedIn India Dhananjay Nair Operations, Technology, Procurement and ... Asim Tejaswi LinkedIn India Pranzal Srivastava HR Officer Creamy Foods Ltd. LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/benaka-gumbira-52720170",
+        "email_guess": "benaka.gumbira@biryaniblues.com",
+        "confidence": 0.5
+      }
+    ]
   },
   {
     "company": "Chai Point",
-    "num_found": 0,
-    "employees": []
+    "num_found": 3,
+    "employees": [
+      {
+        "name": "Roopesha BT",
+        "title": "GM sales /Head National Key & large accounts Chai ...",
+        "linkedin_url": "https://in.linkedin.com/in/roopeshkatna",
+        "email_guess": "roopesha.bt@chaipoint.com",
+        "confidence": 0.7
+      },
+      {
+        "name": "guruprasad",
+        "title": "Cluster Sales Manager Chai Point LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/guruprasad-gn-1b2881244",
+        "email_guess": "guruprasad@chaipoint.com",
+        "confidence": 0.7
+      },
+      {
+        "name": "Guru Prashanth",
+        "title": "General Manager Chai Point LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/guru-prashanth-3752a178",
+        "email_guess": "guru.prashanth@chaipoint.com",
+        "confidence": 0.5
+      }
+    ]
   },
   {
     "company": "EatSure",
-    "num_found": 0,
-    "employees": []
+    "num_found": 3,
+    "employees": [
+      {
+        "name": "LinkedIn Anubhav Narwariya",
+        "title": "Senior Manager Business Strategy Adani Airport Holdings Ltd LinkedIn",
+        "linkedin_url": "https://www.linkedin.com/in/anubhav-narwariya-1b7118131/?_l=en",
+        "email_guess": "linkedin.narwariya@eatsure.com",
+        "confidence": 0.5
+      },
+      {
+        "name": "Anubrat Bhaumik",
+        "title": "Senior Account Executive LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/anubrat-bhaumik-0a5383169",
+        "email_guess": "anubrat.bhaumik@eatsure.com",
+        "confidence": 0.7
+      },
+      {
+        "name": "Aashirwad Bhansali",
+        "title": "Human Learner Full Stack Marketer LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/aashirwad-bhansali",
+        "email_guess": "aashirwad.bhansali@eatsure.com",
+        "confidence": 0.5
+      }
+    ]
   },
   {
     "company": "Swiggy",
     "num_found": 3,
     "employees": [
       {
-        "name": "Shubham Dixit",
-        "title": "Cluster Business Head at Swiggy Instamart ... Google Maps Should My Resume Be in Past or Present Tense? Indeed Minimum present value segment rates Internal Revenue Service Shayutha K B Swiggy LinkedIn Swiggy Head Office, Contact Number Company Contact Detail Swiggy Delivery Partner salaries in India (Updated 2025) Swiggy expands Access kitchens to four metros Vivek Shrivastava Associate Sales Manager LinkedIn",
-        "linkedin_url": "https://in.linkedin.com/in/shubhamd",
-        "email_guess": "shubham.dixit@swiggy.com",
-        "confidence": 0.8
+        "name": "Rishikesh Shah",
+        "title": "\" Sales Manager at Swiggy Turnkey...\" LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/rishikeshshah0",
+        "email_guess": "rishikesh.shah@swiggy.com",
+        "confidence": 0.7
       },
       {
-        "name": "Megha Dabral",
-        "title": "Team Lead Strategic Account Sales Swiggy",
-        "linkedin_url": "https://in.linkedin.com/in/megha-dabral-a1b907102",
-        "email_guess": "megha.dabral@swiggy.com",
-        "confidence": 0.8
+        "name": "Anmol Kataria",
+        "title": "Senior Area Sales Manager Swiggy LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/kataria-anmol",
+        "email_guess": "anmol.kataria@swiggy.com",
+        "confidence": 0.7
       },
       {
-        "name": "Tanmoy Sarkar",
-        "title": "Business Development Manager OYO LinkedIn",
-        "linkedin_url": "https://in.linkedin.com/in/10myz",
-        "email_guess": "tanmoy.sarkar@swiggy.com",
-        "confidence": 0.8
+        "name": "DEBAPRIYA DAS",
+        "title": "Sales Manager Swiggy LinkedIn",
+        "linkedin_url": "https://in.linkedin.com/in/debapriyadas-gbs",
+        "email_guess": "debapriya.das@swiggy.com",
+        "confidence": 0.7
       }
     ]
   }

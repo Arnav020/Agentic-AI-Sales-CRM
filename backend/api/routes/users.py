@@ -1,6 +1,7 @@
 # backend/api/routes/users.py
 from fastapi import APIRouter, HTTPException
 from pathlib import Path
+from fastapi.responses import JSONResponse
 from typing import List
 
 router = APIRouter()
@@ -39,3 +40,19 @@ def user_info(user_id: str):
         "logs": [p.name for p in (user_path / "logs").glob("*")],
     }
     return info
+
+
+@router.get("/{user_id}/has_inputs")
+def check_user_inputs(user_id: str):
+    """Check if user has any JSON files in their inputs folder."""
+    user_input_dir = USERS_DIR / user_id / "inputs"
+
+    if not user_input_dir.exists():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    json_files = [f.name for f in user_input_dir.glob("*.json")]
+
+    if len(json_files) == 0:
+        return JSONResponse({"has_inputs": False, "files": []})
+    
+    return JSONResponse({"has_inputs": True, "files": json_files})

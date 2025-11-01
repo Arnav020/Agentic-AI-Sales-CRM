@@ -1,0 +1,39 @@
+{
+  "industry": [
+    "Food & Beverage Technology",
+    "Restaurant"
+  ],
+  "preferred_keywords": [
+    "restaurant",
+    "food",
+    "beverage"
+  ],
+  "headquarters": [
+    "Bengaluru",
+    "Delhi",
+    "Mumbai"
+  ],
+  "min_funding_signal": 0.3,
+  "max_negative_signal": 0.4,
+  "hiring_required": true,
+  "employee_search_top_percent": 0.2,
+  "founded_after": 2002,
+  "employee_range": [
+    500,
+    2000
+  ],
+  "company_profile": {
+    "name": "TasteIQ Solutions",
+    "description": "TasteIQ Solutions delivers AI-driven restaurant analytics and smart kitchen automation tools that help food chains optimize operations, reduce waste, and boost customer satisfaction.",
+    "website": "https://tasteiqsolutions.com"
+  },
+  "communication_settings": {
+    "sender_name": "Rohan Mehta",
+    "sender_designation": "Sales Manager",
+    "sender_email": "rohan.mehta@tasteiqsolutions.com",
+    "sender_phone": "+91 98123 45678"
+  },
+  "templates": {
+    "initial_email_html": "templates/tasteiq_intro.html"
+  }
+}

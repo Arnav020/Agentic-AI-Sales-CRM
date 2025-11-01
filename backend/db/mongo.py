@@ -3,6 +3,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from passlib.hash import bcrypt
 
 # ======================================================
 # 🔧 Explicitly load .env from backend directory
@@ -22,13 +23,10 @@ client = MongoClient(MONGO_URI)
 db = client["agentic_crm"]
 
 # ======================================================
-# 🧱 User-centric helpers (new structure)
+# 🧱 User-centric helpers (existing)
 # ======================================================
 def save_user_input(user_id: str, input_type: str, data: dict):
-    """
-    Save a user-scoped input.
-    input_type: e.g. 'customer_requirements', 'companies'
-    """
+    """Save a user-scoped input document to MongoDB."""
     doc = {
         "user_id": user_id,
         "type": input_type,
@@ -39,11 +37,7 @@ def save_user_input(user_id: str, input_type: str, data: dict):
 
 
 def save_user_output(user_id: str, agent: str, output_type: str, data: dict):
-    """
-    Save a user-scoped output.
-    agent: which agent produced it (enrichment_agent, scoring_agent, etc.)
-    output_type: e.g. 'enriched_companies', 'lead_scores', 'employees_email'
-    """
+    """Save a user-scoped output document to MongoDB."""
     doc = {
         "user_id": user_id,
         "agent": agent,
@@ -77,39 +71,31 @@ def get_user_outputs(user_id: str, agent: str = None, output_type: str = None, l
 # ======================================================
 def ensure_indexes():
     """Create indexes for efficient queries (idempotent)."""
-    # user_inputs
     db["user_inputs"].create_index([
         ("user_id", ASCENDING),
         ("type", ASCENDING),
         ("timestamp", DESCENDING)
     ])
-
-    # user_outputs
     db["user_outputs"].create_index([
         ("user_id", ASCENDING),
         ("agent", ASCENDING),
         ("output_type", ASCENDING),
         ("timestamp", DESCENDING)
     ])
-
-    # keep an index on email_sender timestamps for analytics
     db["email_sender"].create_index([
         ("user_id", ASCENDING),
         ("timestamp", DESCENDING)
     ])
-
-    # lead_scores (if present) index
     db["lead_scores"].create_index([
         ("user_id", ASCENDING),
         ("timestamp", DESCENDING)
     ])
+    db["users"].create_index("username", unique=True)
+    db["users"].create_index("email", unique=True)
 
 
 def mirror_agent_to_user_outputs(agent_collection: str, agent_field_user_key="user_id"):
-    """
-    Copy documents from an agent collection into user_outputs.
-    One-time use during migration to user-centric schema.
-    """
+    """Migration utility to mirror old agent outputs into user_outputs collection."""
     cursor = db[agent_collection].find({})
     for doc in cursor:
         user_id = doc.get(agent_field_user_key) or doc.get("user") or doc.get("user_id") or "unknown"
@@ -118,7 +104,56 @@ def mirror_agent_to_user_outputs(agent_collection: str, agent_field_user_key="us
             k: v for k, v in doc.items()
             if k not in ("_id", "timestamp", agent_field_user_key)
         }
-        save_user_output(user_id=str(user_id), agent=agent_collection, output_type=out_type, data=payload)
+        save_user_output(
+            user_id=str(user_id),
+            agent=agent_collection,
+            output_type=out_type,
+            data=payload
+        )
+
+
+# ======================================================
+# 🧠 New: User Auth Management (username-based)
+# ======================================================
+USERS_DIR = BASE_DIR / "users"
+users_collection = db["users"]
+
+def create_user_in_db(username: str, email: str, password: str):
+    """
+    Create a new user with:
+    - username (used as folder name + Mongo user_id)
+    - email
+    - hashed password
+    """
+    if users_collection.find_one({"username": username}):
+        return None  # already exists
+
+    password_hash = bcrypt.hash(password)
+    new_user = {
+        "user_id": username,
+        "username": username,
+        "email": email,
+        "password_hash": password_hash,
+        "created_at": datetime.utcnow(),
+    }
+    users_collection.insert_one(new_user)
+
+    # Create user folder structure
+    user_path = USERS_DIR / username
+    for sub in ("inputs", "outputs", "logs", "templates"):
+        (user_path / sub).mkdir(parents=True, exist_ok=True)
+
+    return new_user
+
+
+def verify_user_credentials(username: str, password: str):
+    """Verify username + password combination."""
+    user = users_collection.find_one({"username": username})
+    if not user:
+        return None
+    if bcrypt.verify(password, user["password_hash"]):
+        return user
+    return None
 
 
 # ======================================================

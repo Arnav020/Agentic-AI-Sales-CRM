@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routes import users, agents, analytics, campaigns, data
+from backend.api.routes import users, agents, analytics, campaigns, data, auth
 
 app = FastAPI(
     title="Agentic CRM Backend API",
@@ -25,6 +25,8 @@ app.include_router(agents.router, prefix="/agents", tags=["Agents"])
 app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 app.include_router(campaigns.router, prefix="/campaigns", tags=["Campaigns"])
 app.include_router(data.router, prefix="/data", tags=["Data"])
+app.include_router(data.router, prefix="/users", tags=["User Data"])
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 
 
 @app.get("/")
