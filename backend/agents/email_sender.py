@@ -1,12 +1,10 @@
+# backend/agents/email_sender.py
 """
 Agentic CRM – Email Campaign + Gemini Auto-Reply Agent (Mongo Integrated)
----------------------------------------------------------------------------
-• Works inside backend/users/<user_id>/
-• Uses backend/utils/generate_token.py for Gmail OAuth
-• Loads environment variables from backend/.env
-• Reads credentials.json + token.json from backend/
-• Saves campaign + reply metadata to MongoDB (collection: email_sender)
-• Includes full Gemini-based auto-reply logic
+
+- main() now sends campaign only and returns (so agent job completes).
+- start_auto_reply / stop_auto_reply / email_auto_reply_status helpers
+  allow background auto-reply control (safe cross-process via flag + in-process thread map).
 """
 
 import os
@@ -15,8 +13,8 @@ import json
 import time
 import base64
 import logging
+import threading
 import re
-import uuid
 from datetime import datetime
 from pathlib import Path
 from email.mime.text import MIMEText
@@ -25,7 +23,6 @@ from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 
 # Gmail API
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -37,6 +34,11 @@ import google.generativeai as genai
 from backend.utils.generate_token import generate_token
 from backend.db.mongo import save_user_output
 
+# Module-level map of running auto-reply threads:
+# key = user_root (string), value = {"thread": Thread, "instance": CompleteEmailSystem}
+_AUTO_REPLY_THREADS = {}
+_AUTO_REPLY_LOCK = threading.Lock()
+
 
 class CompleteEmailSystem:
     def __init__(self, user_root: str = None):
@@ -44,7 +46,7 @@ class CompleteEmailSystem:
 
         # ---- Directories ----
         self.project_root = Path(__file__).resolve().parents[1]  # backend/
-        self.user_root = Path(user_root) if user_root else self.project_root
+        self.user_root = Path(user_root) if user_root else self.project_root / "users" / "user_demo"
         self.inputs_dir = self.user_root / "inputs"
         self.logs_dir = self.user_root / "logs"
         self.templates_dir = self.user_root / "templates"
@@ -78,7 +80,7 @@ class CompleteEmailSystem:
             or f"Hello from {self.company.get('name','')}"
         )
 
-        # ---- Gmail Auth ----
+        # ---- Gmail Auth (lazy: authenticate called in __init__ to match prior behavior) ----
         self.service = None
         self.authenticate()
 
@@ -110,7 +112,8 @@ class CompleteEmailSystem:
             format="%(asctime)s [%(levelname)s] %(message)s",
             handlers=[handler, console],
         )
-        self.logger = logging.getLogger(__name__)
+        # name logger per-user for easier debug
+        self.logger = logging.getLogger(f"email_sender_{self.user_root.name}")
         self.logger.info(f"🪶 Logging initialized → {log_file}")
 
     # =========================================================
@@ -207,17 +210,17 @@ class CompleteEmailSystem:
         msg["To"] = recipient["email"]
         msg["Subject"] = self.subject
         msg.attach(MIMEText(final_html, "html"))
-        return msg
+        return msg, final_html
 
     def send_email(self, recipient: dict):
-        msg = self.create_email_message(recipient)
+        msg, html = self.create_email_message(recipient)
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
         for attempt in range(3):
             try:
                 res = self.service.users().messages().send(userId="me", body={"raw": raw}).execute()
                 self._track_email(recipient, "campaign", res.get("id"))
                 self.logger.info(f"📤 Sent email → {recipient['email']}")
-                return True
+                return True, html
             except HttpError as e:
                 if getattr(e.resp, "status", None) in (429, 503):
                     delay = 5 * (2 ** attempt)
@@ -226,7 +229,7 @@ class CompleteEmailSystem:
                     continue
                 self.logger.error(f"Gmail error: {e}")
                 break
-        return False
+        return False, None
 
     # =========================================================
     # ------------------- Tracking ----------------------------
@@ -349,7 +352,8 @@ class CompleteEmailSystem:
 
     def mark_as_read(self, msg_id):
         try:
-            self.service.users().messages().modify(userId="me", id=msg_id, body={"removeLabelIds": ["UNREAD"]}).execute()
+            self.service.users().messages().modify(userId="me", id=msg_id,
+                                                  body={"removeLabelIds": ["UNREAD"]}).execute()
         except Exception as e:
             self.logger.error(f"Mark-as-read error: {e}")
 
@@ -371,13 +375,24 @@ class CompleteEmailSystem:
     # ----------------- Auto-Reply Loop -----------------------
     # =========================================================
     def run_auto_reply_monitoring(self, check_interval=180):
+        """
+        Auto-reply monitoring loop (instance method).
+        Loop is stoppable by the filesystem stop flag created by stop().
+        """
         self.logger.info("🔁 Auto-reply monitor started.")
         try:
-            while True:
+            # ensure previous flag is cleared on natural start
+            self._clear_stop_flag()
+
+            while not self._should_stop():
                 msgs = self.get_unread_emails()
                 if not msgs:
                     self.logger.info("No unread messages.")
                 for m in msgs:
+                    if self._should_stop():
+                        self.logger.info("Stop requested — breaking out of email loop.")
+                        break
+
                     msg_id = m.get("id")
                     if not msg_id or msg_id in self.processed_emails:
                         continue
@@ -414,9 +429,19 @@ class CompleteEmailSystem:
                     except Exception:
                         self.logger.exception("Failed to save auto-reply metadata to user_outputs")
 
-                time.sleep(check_interval)
+                # sleep in small slices so stop flag is responsive
+                total_wait = check_interval
+                slice_sec = 2.0
+                elapsed = 0.0
+                while elapsed < total_wait:
+                    if self._should_stop():
+                        break
+                    time.sleep(min(slice_sec, total_wait - elapsed))
+                    elapsed += slice_sec
+
+            self.logger.info("⛔ Auto-reply loop terminated cleanly.")
         except KeyboardInterrupt:
-            self.logger.info("Auto-reply monitor stopped.")
+            self.logger.info("Auto-reply monitor stopped by KeyboardInterrupt.")
         except Exception as e:
             self.logger.exception(f"Monitor loop error: {e}")
 
@@ -432,26 +457,55 @@ class CompleteEmailSystem:
     # =========================================================
     def send_bulk_emails(self):
         recips = []
+        if not self.recipients_csv.exists():
+            self.logger.error(f"No recipients.csv found at {self.recipients_csv}")
+            return False
+
         with self.recipients_csv.open("r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 name, email = r.get("name", "").strip(), r.get("email", "").strip().lower()
                 if name and email:
                     recips.append({"name": name, "email": email})
         sent = failed = 0
+        # store per-recipient sent info (for output)
+        results = []
         for rc in recips:
-            ok = self.send_email(rc)
-            sent += ok
-            failed += not ok
+            ok, html = self.send_email(rc)
+            sent += 1 if ok else 0
+            failed += 0 if ok else 1
+            results.append({
+                "name": rc["name"],
+                "email": rc["email"],
+                "sent": bool(ok),
+                "content_html": html or ""
+            })
+            # small delay between sends
             time.sleep(2)
+
         self.logger.info(f"Campaign complete — Sent {sent}, Failed {failed}")
+
+        # Save campaign summary locally (outputs) so frontend can fetch it
+        summary = {
+            "sent": sent,
+            "failed": failed,
+            "recipients": results,
+            "subject": self.subject,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        try:
+            summary_path = self.outputs_dir / "campaign_summary.json"
+            summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+            self.logger.info(f"Saved campaign_summary to {summary_path}")
+        except Exception:
+            self.logger.exception("Failed to save campaign summary file")
 
         try:
             user_id = self.user_root.name
             save_user_output(
-                user_id=user_id, 
+                user_id=user_id,
                 agent="email_sender",
                 output_type="campaign_summary",
-                data={"sent": sent, "failed": failed, "recipients": recips}
+                data=summary
             )
             self.logger.info("Saved campaign summary to user_outputs (mongo)")
         except Exception:
@@ -463,23 +517,152 @@ class CompleteEmailSystem:
     # ----------------- Combined Runner -----------------------
     # =========================================================
     def run_complete_system(self):
-        self.logger.info(f"🚀 Running full email system ({self.user_root.name})")
-        if self.send_bulk_emails():
-            self.run_auto_reply_monitoring()
-        else:
-            self.logger.error("Campaign failed — skipping auto-reply monitor.")
+        """
+        For agent-run usage we only run campaign (so the agent job can complete).
+        Auto-reply must be started separately using start_auto_reply().
+        """
+        self.logger.info(f"🚀 Running campaign for {self.user_root.name}")
+        ok = self.send_bulk_emails()
+        if not ok:
+            self.logger.error("Campaign failed or no recipients found.")
+        return ok
+
+    # -------- Control / Stop flag helpers --------
+    def _control_dir(self):
+        d = self.user_root / "control"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _stop_flag_path(self):
+        return self._control_dir() / "stop_auto_reply.txt"
+
+    def _clear_stop_flag(self):
+        """Remove stop flag if exists (called on start)."""
+        try:
+            p = self._stop_flag_path()
+            if p.exists():
+                p.unlink()
+                self.logger.info("🧼 Cleared previous stop flag.")
+        except Exception as e:
+            self.logger.warning(f"Could not clear stop flag: {e}")
+
+    def _should_stop(self):
+        """Return True if stop flag exists."""
+        try:
+            return self._stop_flag_path().exists()
+        except Exception:
+            return False
+
+    def stop(self):
+        """Create the stop flag (can be called from API)."""
+        try:
+            self._control_dir().mkdir(parents=True, exist_ok=True)
+            self._stop_flag_path().write_text("stop", encoding="utf-8")
+            self.logger.info("🛑 Stop flag written. Auto-reply will stop shortly.")
+            return True
+        except Exception as e:
+            self.logger.exception(f"Failed to write stop flag: {e}")
+            return False
+
+
+# -------------------------
+# Module-level helpers (Option A)
+# -------------------------
+def _thread_key(user_root: str) -> str:
+    return str(Path(user_root).resolve())
+
+
+def start_auto_reply(user_root: str):
+    """
+    Start auto-reply background thread for the given user_root.
+    Idempotent: if a thread is already running it returns started=False.
+    """
+    key = _thread_key(user_root)
+    with _AUTO_REPLY_LOCK:
+        entry = _AUTO_REPLY_THREADS.get(key)
+        if entry and entry.get("thread") and entry["thread"].is_alive():
+            return {"ok": True, "started": False, "message": "Auto-reply already running"}
+
+        # create instance (this will authenticate)
+        inst = CompleteEmailSystem(user_root=user_root)
+
+        # ensure stop flag is cleared before starting
+        inst._clear_stop_flag()
+
+        thr = threading.Thread(target=_auto_reply_thread_target, args=(inst,), daemon=True)
+        _AUTO_REPLY_THREADS[key] = {"thread": thr, "instance": inst}
+        thr.start()
+        return {"ok": True, "started": True, "message": "Auto-reply started in background"}
+
+
+def _auto_reply_thread_target(instance: CompleteEmailSystem):
+    """
+    Run the instance loop and clean up mapping when loop exits.
+    """
+    try:
+        instance.run_auto_reply_monitoring()
+    except Exception:
+        instance.logger.exception("Auto-reply thread crashed")
+    finally:
+        key = _thread_key(instance.user_root)
+        with _AUTO_REPLY_LOCK:
+            _AUTO_REPLY_THREADS.pop(key, None)
+        instance.logger.info("Auto-reply background thread has exited")
+
+
+def stop_auto_reply(user_root: str):
+    """
+    Stop auto-reply for a user. If a background thread is running, call instance.stop() which writes the flag.
+    Also write the flag as fallback so other processes recognize it.
+    """
+    key = _thread_key(user_root)
+    try:
+        # always write flag (idempotent)
+        ctrl = Path(user_root) / "control"
+        ctrl.mkdir(parents=True, exist_ok=True)
+        (ctrl / "stop_auto_reply.txt").write_text("stop", encoding="utf-8")
+    except Exception:
+        pass
+
+    with _AUTO_REPLY_LOCK:
+        entry = _AUTO_REPLY_THREADS.get(key)
+        if entry:
+            inst = entry.get("instance")
+            try:
+                if inst:
+                    inst.stop()
+            except Exception:
+                pass
+            return {"ok": True, "message": "Stop requested (thread signalled) (if it was running)"}
+
+    return {"ok": True, "message": "Stop flag written (no running thread detected)"}
+
+
+def email_auto_reply_status(user_root: str) -> dict:
+    """
+    Return running=True if a background thread is alive OR stop flag is absent.
+    """
+    stop_file = Path(user_root) / "control" / "stop_auto_reply.txt"
+    running_flag = not stop_file.exists()
+    key = _thread_key(user_root)
+    with _AUTO_REPLY_LOCK:
+        entry = _AUTO_REPLY_THREADS.get(key)
+        thread_alive = bool(entry and entry.get("thread") and entry["thread"].is_alive())
+    running = thread_alive or running_flag
+    return {"ok": True, "running": bool(running), "thread_alive": thread_alive}
 
 
 # =============================================================
-# ------------------------ Entrypoint -------------------------
+# Entrypoint for running as a standalone agent (campaign-only)
 # =============================================================
 def main(user_folder: str | None = None):
     user_path = Path(user_folder) if user_folder else Path("backend/users/user_demo")
     sys = CompleteEmailSystem(user_root=user_path)
+    # only run campaign & return so agent job completes
     sys.run_complete_system()
 
 
 if __name__ == "__main__":
-    import sys
-    user_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    import sys as _sys
+    user_arg = _sys.argv[1] if len(_sys.argv) > 1 else None
     main(user_arg)

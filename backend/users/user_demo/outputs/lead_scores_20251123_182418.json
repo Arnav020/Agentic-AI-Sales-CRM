@@ -1,0 +1,496 @@
+{
+  "user_id": "user_demo",
+  "correlation_id": "2c3ae5d8-549d-417b-a47e-88d5bd17d95d",
+  "created_at": "2025-11-23 18:24:18.771788",
+  "count": 20,
+  "results": [
+    {
+      "company": "PhonePe",
+      "score": 74.56,
+      "fit_label": "Moderate Match",
+      "breakdown": {
+        "industry": 38.0,
+        "keywords": 13.292,
+        "hq": 4.727,
+        "funding": 6.469,
+        "expansion": 3.0,
+        "negative": -1.6,
+        "momentum": 2.6,
+        "hiring": 6,
+        "founded_year": 2.07,
+        "employees": 0.0,
+        "total": 74.56
+      },
+      "reasons": [
+        "Strong industry alignment (Financial Services and Technology)",
+        "Keywords matched: lending, payment, payments, upi, wallet",
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Active expansion observed",
+        "High momentum (growth health)",
+        "Actively hiring",
+        "Founded recently (2015)"
+      ]
+    },
+    {
+      "company": "CRED",
+      "score": 56.35,
+      "fit_label": "Moderate Match",
+      "breakdown": {
+        "industry": 25.3,
+        "keywords": 12.648,
+        "hq": 3.111,
+        "funding": 5.388,
+        "expansion": 1.113,
+        "negative": -1.6,
+        "momentum": 1.749,
+        "hiring": 6,
+        "founded_year": 2.642,
+        "employees": 0.0,
+        "total": 56.35
+      },
+      "reasons": [
+        "Partial industry similarity (Fintech)",
+        "Keywords matched: card, credit, fintech, payments",
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring",
+        "Founded recently (2018)"
+      ]
+    },
+    {
+      "company": "Razorpay",
+      "score": 52.6,
+      "fit_label": "Moderate Match",
+      "breakdown": {
+        "industry": 25.3,
+        "keywords": 12.331,
+        "hq": 5.333,
+        "funding": 0.442,
+        "expansion": 2.499,
+        "negative": -1.6,
+        "momentum": 0.5,
+        "hiring": 6,
+        "founded_year": 1.796,
+        "employees": 0.0,
+        "total": 52.6
+      },
+      "reasons": [
+        "Partial industry similarity (Fintech)",
+        "Keywords matched: credit, debit, payment, payments, upi",
+        "HQ region partially matches",
+        "Active expansion observed",
+        "Actively hiring",
+        "Founded recently (2014)"
+      ]
+    },
+    {
+      "company": "Paytm",
+      "score": 49.83,
+      "fit_label": "Moderate Match",
+      "breakdown": {
+        "industry": 33.297,
+        "keywords": 10.473,
+        "hq": 2.439,
+        "funding": 0.498,
+        "expansion": 0.427,
+        "negative": -4.0,
+        "momentum": 0.0,
+        "hiring": 6,
+        "founded_year": 0.694,
+        "employees": 0.0,
+        "total": 49.83
+      },
+      "reasons": [
+        "Strong industry alignment (Financial Software)",
+        "Keywords matched: payment, payments, upi",
+        "High negative sentiment detected",
+        "Actively hiring",
+        "Founded recently (2010)"
+      ]
+    },
+    {
+      "company": "UpGrad",
+      "score": 41.85,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 15.774,
+        "keywords": 4.986,
+        "hq": 3.81,
+        "funding": 3.85,
+        "expansion": 0.945,
+        "negative": -0.0,
+        "momentum": 1.415,
+        "hiring": 6,
+        "founded_year": 2.07,
+        "employees": 3,
+        "total": 41.85
+      },
+      "reasons": [
+        "Keywords matched: data",
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring",
+        "Founded recently (2015)",
+        "Employee size within target (4000)"
+      ]
+    },
+    {
+      "company": "Zepto",
+      "score": 39.72,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 14.673,
+        "keywords": 4.065,
+        "hq": 5.333,
+        "funding": 4.483,
+        "expansion": 2.079,
+        "negative": -1.6,
+        "momentum": 1.802,
+        "hiring": 6,
+        "founded_year": 2.883,
+        "employees": 0.0,
+        "total": 39.72
+      },
+      "reasons": [
+        "HQ region partially matches",
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Active expansion observed",
+        "Actively hiring",
+        "Founded recently (2021)"
+      ]
+    },
+    {
+      "company": "UrbanClap",
+      "score": 38.36,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 13.646,
+        "keywords": 2.781,
+        "hq": 2.667,
+        "funding": 4.396,
+        "expansion": 2.039,
+        "negative": -0.0,
+        "momentum": 2.039,
+        "hiring": 6,
+        "founded_year": 1.796,
+        "employees": 3,
+        "total": 38.36
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Active expansion observed",
+        "Actively hiring",
+        "Founded recently (2014)",
+        "Employee size within target (1370)"
+      ]
+    },
+    {
+      "company": "Biryani Blues",
+      "score": 36.47,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 12.665,
+        "keywords": 2.811,
+        "hq": 4.545,
+        "funding": 4.313,
+        "expansion": 0.303,
+        "negative": -0.0,
+        "momentum": 1.333,
+        "hiring": 6,
+        "founded_year": 1.5,
+        "employees": 3,
+        "total": 36.47
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring",
+        "Founded recently (2013)",
+        "Employee size within target (103)"
+      ]
+    },
+    {
+      "company": "Rebel Foods",
+      "score": 33.4,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 12.665,
+        "keywords": 3.006,
+        "hq": 3.81,
+        "funding": 3.627,
+        "expansion": 0.891,
+        "negative": -1.6,
+        "momentum": 1.067,
+        "hiring": 6,
+        "founded_year": 0.93,
+        "employees": 3,
+        "total": 33.4
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring",
+        "Founded recently (2011)",
+        "Employee size within target (8500)"
+      ]
+    },
+    {
+      "company": "PolicyBazaar",
+      "score": 31.0,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 12.713,
+        "keywords": 4.673,
+        "hq": 4.545,
+        "funding": 3.631,
+        "expansion": 0.304,
+        "negative": -1.6,
+        "momentum": 0.734,
+        "hiring": 6,
+        "founded_year": 0.0,
+        "employees": 0.0,
+        "total": 31.0
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring"
+      ]
+    },
+    {
+      "company": "Dream11",
+      "score": 30.17,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 12.377,
+        "keywords": 1.944,
+        "hq": 3.81,
+        "funding": 3.607,
+        "expansion": 0.302,
+        "negative": -1.6,
+        "momentum": 0.729,
+        "hiring": 6,
+        "founded_year": 0.0,
+        "employees": 3,
+        "total": 30.17
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring",
+        "Employee size within target (100)"
+      ]
+    },
+    {
+      "company": "Barista",
+      "score": 27.75,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 11.586,
+        "keywords": 3.063,
+        "hq": 1.818,
+        "funding": 3.55,
+        "expansion": 1.957,
+        "negative": -1.6,
+        "momentum": 1.37,
+        "hiring": 6,
+        "founded_year": 0.0,
+        "employees": 0.0,
+        "total": 27.75
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Active expansion observed",
+        "Actively hiring"
+      ]
+    },
+    {
+      "company": "Swiggy",
+      "score": 26.87,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 10.535,
+        "keywords": 2.593,
+        "hq": 1.667,
+        "funding": 0.339,
+        "expansion": 2.978,
+        "negative": -0.0,
+        "momentum": 0.958,
+        "hiring": 6,
+        "founded_year": 1.796,
+        "employees": 0.0,
+        "total": 26.87
+      },
+      "reasons": [
+        "Active expansion observed",
+        "Actively hiring",
+        "Founded recently (2014)"
+      ]
+    },
+    {
+      "company": "Haldiram's",
+      "score": 25.42,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 9.533,
+        "keywords": 1.857,
+        "hq": 2.449,
+        "funding": 4.046,
+        "expansion": 0.285,
+        "negative": -0.0,
+        "momentum": 1.251,
+        "hiring": 6,
+        "founded_year": 0.0,
+        "employees": 0.0,
+        "total": 25.42
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring"
+      ]
+    },
+    {
+      "company": "Byju's",
+      "score": 24.24,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 9.886,
+        "keywords": 2.097,
+        "hq": 2.202,
+        "funding": 2.205,
+        "expansion": 0.287,
+        "negative": -0.0,
+        "momentum": 0.63,
+        "hiring": 6,
+        "founded_year": 0.93,
+        "employees": 0.0,
+        "total": 24.24
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Actively hiring",
+        "Founded recently (2011)"
+      ]
+    },
+    {
+      "company": "Chai Point",
+      "score": 23.52,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 11.95,
+        "keywords": 2.674,
+        "hq": 5.333,
+        "funding": 4.252,
+        "expansion": 0.299,
+        "negative": -0.0,
+        "momentum": 1.314,
+        "hiring": -3.0,
+        "founded_year": 0.694,
+        "employees": 0.0,
+        "total": 23.52
+      },
+      "reasons": [
+        "HQ region partially matches",
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Not hiring (requirement unmet)",
+        "Founded recently (2010)"
+      ]
+    },
+    {
+      "company": "EatSure",
+      "score": 23.36,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 20.23,
+        "keywords": 4.23,
+        "hq": 1.143,
+        "funding": 0.407,
+        "expansion": 0.349,
+        "negative": -0.0,
+        "momentum": 0.0,
+        "hiring": -3.0,
+        "founded_year": 0.0,
+        "employees": 0.0,
+        "total": 23.36
+      },
+      "reasons": [
+        "Partial industry similarity (Food and Beverage, Technology)",
+        "Not hiring (requirement unmet)"
+      ]
+    },
+    {
+      "company": "Chaayos",
+      "score": 23.05,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 5.886,
+        "keywords": 3.118,
+        "hq": 0.889,
+        "funding": 3.736,
+        "expansion": 0.772,
+        "negative": -0.0,
+        "momentum": 1.444,
+        "hiring": 6,
+        "founded_year": 1.204,
+        "employees": 0.0,
+        "total": 23.05
+      },
+      "reasons": [
+        "Meets funding threshold",
+        "Strong funding momentum",
+        "Actively hiring",
+        "Founded recently (2012)"
+      ]
+    },
+    {
+      "company": "Ola",
+      "score": 18.41,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 6.95,
+        "keywords": 3.47,
+        "hq": 1.143,
+        "funding": 0.314,
+        "expansion": 1.774,
+        "negative": -1.6,
+        "momentum": 0.355,
+        "hiring": 6,
+        "founded_year": 0.0,
+        "employees": 0.0,
+        "total": 18.41
+      },
+      "reasons": [
+        "Active expansion observed",
+        "Actively hiring"
+      ]
+    },
+    {
+      "company": "Zomato",
+      "score": 17.16,
+      "fit_label": "Low Match",
+      "breakdown": {
+        "industry": 17.862,
+        "keywords": 3.78,
+        "hq": 1.143,
+        "funding": 0.39,
+        "expansion": 0.982,
+        "negative": -4.0,
+        "momentum": 0.0,
+        "hiring": -3.0,
+        "founded_year": 0.0,
+        "employees": 0.0,
+        "total": 17.16
+      },
+      "reasons": [
+        "High negative sentiment detected",
+        "Not hiring (requirement unmet)"
+      ]
+    }
+  ]
+}

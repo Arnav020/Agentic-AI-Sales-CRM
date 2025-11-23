@@ -1,0 +1,14 @@
+{
+  "sent": 1,
+  "failed": 0,
+  "recipients": [
+    {
+      "name": "Arnav",
+      "email": "joshiarnav020305@gmail.com",
+      "sent": true,
+      "content_html": "<div style='font-family:Arial,sans-serif;font-size:11pt;line-height:1.5'><!-- SUBJECT: Improve credit decisioning & fraud detection with AI-driven insights -->\n<div dir=\"ltr\" style=\"font-family:Arial,sans-serif;font-size:11pt;width:100%; line-height:1.5;\">\n  <p><strong>Hi Arnav,</strong></p>\n\n  <p>I hope you’re doing well.</p>\n\n  <p>\n    I’m reaching out from <strong>FinSight Analytics</strong>, where we help financial institutions and FinTechs enhance their\n    <strong>risk modeling</strong>, <strong>credit decisioning</strong>, and <strong>fraud detection</strong> capabilities using AI-driven data intelligence.\n  </p>\n\n  <p>\n    Our platform integrates internal and external financial signals to deliver actionable insights—helping teams reduce default rates,\n    optimize credit underwriting, and improve portfolio forecasting accuracy.\n  </p>\n\n  <p>\n    Would you be open to a brief 15-minute call next week to explore whether we can help your analytics or credit risk initiatives?\n  </p>\n\n  <p>Looking forward to your thoughts.</p>\n</div>\n<br><strong>Best regards,</strong><br>Neha Kapoor<br>Business Development Manager | FinSight Analytics<br><a href='mailto:neha.kapoor@finsightanalytics.com'>neha.kapoor@finsightanalytics.com</a><br>+91 98765 43210</div>"
+    }
+  ],
+  "subject": "Improve credit decisioning & fraud detection with AI-driven insights",
+  "timestamp": "2025-11-23T20:04:22.922300"
+}
