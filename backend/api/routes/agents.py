@@ -34,6 +34,25 @@ def list_available_agents():
     names = sorted([f[:-3] for f in files if not f.startswith("__")])
     return {"agents": names}
 
+@router.post("/{user_id}/run/pipeline")
+def run_pipeline(user_id: str, background: bool = True):
+    """
+    Enqueue the full pipeline (5 agents) in correct order for the given user.
+    Returns the list of job_ids in order.
+    """
+    user_path = USERS_DIR / user_id
+    if not user_path.exists():
+        raise HTTPException(status_code=404, detail="User folder not found")
+
+    job_ids = []
+    for agent_name in PIPELINE_ORDER:
+        agent_file = AGENTS_DIR / f"{agent_name}.py"
+        if not agent_file.exists():
+            raise HTTPException(status_code=404, detail=f"Agent {agent_name} not found")
+        jid = enqueue_job(user_id, agent_name, str(user_path))
+        job_ids.append({"agent": agent_name, "job_id": jid})
+    return {"status": "pipeline_queued", "jobs": job_ids}
+
 
 @router.post("/{user_id}/run/{agent_name}")
 def run_agent(user_id: str, agent_name: str, background: bool = True, bt: BackgroundTasks = None):
@@ -54,24 +73,7 @@ def run_agent(user_id: str, agent_name: str, background: bool = True, bt: Backgr
     return {"status": "queued", "job_id": job_id, "agent": agent_name, "user": user_id}
 
 
-@router.post("/{user_id}/run/pipeline")
-def run_pipeline(user_id: str, background: bool = True):
-    """
-    Enqueue the full pipeline (5 agents) in correct order for the given user.
-    Returns the list of job_ids in order.
-    """
-    user_path = USERS_DIR / user_id
-    if not user_path.exists():
-        raise HTTPException(status_code=404, detail="User folder not found")
 
-    job_ids = []
-    for agent_name in PIPELINE_ORDER:
-        agent_file = AGENTS_DIR / f"{agent_name}.py"
-        if not agent_file.exists():
-            raise HTTPException(status_code=404, detail=f"Agent {agent_name} not found")
-        jid = enqueue_job(user_id, agent_name, str(user_path))
-        job_ids.append({"agent": agent_name, "job_id": jid})
-    return {"status": "pipeline_queued", "jobs": job_ids}
 
 
 @router.get("/{user_id}/job/{job_id}")
